@@ -1,22 +1,27 @@
-use mlua::{
-    ExternalError, FromLua, FromLuaMulti, Lua, MultiValue, Result, Table, TableExt, ToLua, Value,
-};
+use std::future::Future;
+use std::sync::Once;
 
-// use crate::txn::Txn;
+use mlua::{ExternalError, FromLua, FromLuaMulti, Lua, Result, Table, TableExt, ToLua, Value};
 
-pub struct Core<'lua>(&'lua Lua, Table<'lua>);
+#[derive(Clone)]
+pub struct Core<'lua> {
+    lua: &'lua Lua,
+    class: Table<'lua>,
+}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Time {
     pub sec: u64,
     pub usec: u64,
 }
 
+#[derive(Debug)]
 pub enum ServiceMode {
     Tcp,
     Http,
 }
 
+#[derive(Debug)]
 pub enum LogLevel {
     Emerg,
     Alert,
@@ -28,27 +33,36 @@ pub enum LogLevel {
     Debug,
 }
 
+static START: Once = Once::new();
+
 impl<'lua> Core<'lua> {
     // TODO: add_acl
     // TODO: del_acl
     // TODO: del_map
 
     pub fn new(lua: &'lua Lua) -> Result<Self> {
-        let core: Table = lua.globals().get("core")?;
-        Ok(Core(lua, core))
+        let class: Table = lua.globals().get("core")?;
+
+        START.call_once(|| {
+            lua.load(r"coroutine.yield = core.yield")
+                .exec()
+                .expect("init haproxy-api");
+        });
+
+        Ok(Core { lua, class })
     }
 
     pub fn log<S: AsRef<str>>(&self, level: LogLevel, msg: S) -> Result<()> {
         let msg = msg.as_ref();
-        self.1.call_function("log", (level, msg))
+        self.class.call_function("log", (level, msg))
     }
 
     pub fn get_info(&self) -> Result<Vec<String>> {
-        self.1.call_function("get_info", ())
+        self.class.call_function("get_info", ())
     }
 
     pub fn now(&self) -> Result<Time> {
-        let time: Table = self.1.call_function("now", ())?;
+        let time: Table = self.class.call_function("now", ())?;
         Ok(Time {
             sec: time.get("sec")?,
             usec: time.get("usec")?,
@@ -56,27 +70,27 @@ impl<'lua> Core<'lua> {
     }
 
     pub fn http_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.1.call_function("http_date", date)?;
+        let date: Option<u64> = self.class.call_function("http_date", date)?;
         date.ok_or("invalid date".to_lua_err())
     }
 
     pub fn imf_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.1.call_function("imf_date", date)?;
+        let date: Option<u64> = self.class.call_function("imf_date", date)?;
         date.ok_or("invalid date".to_lua_err())
     }
 
     pub fn rfc850_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.1.call_function("rfc850_date", date)?;
+        let date: Option<u64> = self.class.call_function("rfc850_date", date)?;
         date.ok_or("invalid date".to_lua_err())
     }
 
     pub fn asctime_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.1.call_function("asctime_date", date)?;
+        let date: Option<u64> = self.class.call_function("asctime_date", date)?;
         date.ok_or("invalid date".to_lua_err())
     }
 
     pub fn msleep(&self, milliseconds: u64) -> Result<()> {
-        self.1.call_function("msleep", milliseconds)
+        self.class.call_function("msleep", milliseconds)
     }
 
     // TODO: proxies
@@ -88,23 +102,31 @@ impl<'lua> Core<'lua> {
         name: &str,
         actions: &[&str],
         func: F,
-        nb_args: Option<usize>,
+        nb_args: usize,
     ) -> Result<()>
     where
         A: FromLuaMulti<'callback>,
-        F: Fn(&'callback Lua, Core, Table, A) -> Result<()> + 'static,
+        F: Fn(&'callback Lua, A) -> Result<()> + 'static,
     {
-        let func = self.0.create_function(move |lua, args: MultiValue| {
-            let mut args = args.into_vec();
-            args.reverse();
-            let txn: Table = Table::from_lua(args.pop().expect("txn expected"), lua)?;
-            args.reverse();
-            let args = MultiValue::from_vec(args);
+        let func = self.lua.create_function(func)?;
+        self.class
+            .call_function("register_action", (name, actions.to_vec(), func, nb_args))
+    }
 
-            func(lua, Core::new(lua)?, txn, A::from_lua_multi(args, lua)?)
-        })?;
-
-        self.1
+    pub fn register_async_action<'callback, A, F, FR>(
+        &self,
+        name: &str,
+        actions: &[&str],
+        func: F,
+        nb_args: usize,
+    ) -> Result<()>
+    where
+        A: FromLuaMulti<'callback>,
+        F: Fn(&'callback Lua, A) -> FR + 'static,
+        FR: Future<Output = Result<()>> + 'static,
+    {
+        let func = self.lua.create_async_function(func)?;
+        self.class
             .call_function("register_action", (name, actions.to_vec(), func, nb_args))
     }
 
@@ -112,102 +134,105 @@ impl<'lua> Core<'lua> {
     where
         A: FromLuaMulti<'callback>,
         R: ToLua<'callback>,
-        F: Fn(&'callback Lua, Core, A) -> Result<R> + 'static,
+        F: Fn(&'callback Lua, A) -> Result<R> + 'static,
     {
-        let func = self
-            .0
-            .create_function(move |lua, args| func(lua, Core::new(lua)?, args))?;
-        self.1.call_function("register_converters", (name, func))
+        let func = self.lua.create_function(func)?;
+        self.class
+            .call_function("register_converters", (name, func))
     }
 
     pub fn register_fetches<'callback, A, R, F>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'callback>,
         R: ToLua<'callback>,
-        F: Fn(&'callback Lua, Core, A) -> Result<R> + 'static,
+        F: Fn(&'callback Lua, A) -> Result<R> + 'static,
     {
-        let func = self
-            .0
-            .create_function(move |lua, args| func(lua, Core::new(lua)?, args))?;
-        self.1.call_function("register_fetches", (name, func))
+        let func = self.lua.create_function(func)?;
+        self.class.call_function("register_fetches", (name, func))
     }
 
-    pub fn register_service<'callback, A, R, F>(
+    pub fn register_service<'callback, A, F>(
         &self,
         name: &str,
         mode: ServiceMode,
         func: F,
     ) -> Result<()>
     where
-        A: FromLuaMulti<'callback>,
-        R: ToLua<'callback>,
-        F: Fn(&'callback Lua, Core, A) -> Result<R> + 'static,
+        A: FromLua<'callback>,
+        F: Fn(&'callback Lua, A) -> Result<()> + 'static,
     {
-        let func = self
-            .0
-            .create_function(move |lua, args| func(lua, Core::new(lua)?, args))?;
+        let func = self.lua.create_function(func)?;
         let mode = match mode {
             ServiceMode::Tcp => "tcp",
             ServiceMode::Http => "http",
         };
-        self.1.call_function("register_service", (name, mode, func))
+        self.class
+            .call_function("register_service", (name, mode, func))
+    }
+
+    pub fn register_async_service<'callback, A, F, FR>(
+        &self,
+        name: &str,
+        mode: ServiceMode,
+        func: F,
+    ) -> Result<()>
+    where
+        A: FromLua<'callback>,
+        F: Fn(&'callback Lua, A) -> FR + 'static,
+        FR: Future<Output = Result<()>> + 'static,
+    {
+        let func = self.lua.create_async_function(func)?;
+        let mode = match mode {
+            ServiceMode::Tcp => "tcp",
+            ServiceMode::Http => "http",
+        };
+        self.class
+            .call_function("register_service", (name, mode, func))
     }
 
     pub fn register_init<'callback, F>(&self, func: F) -> Result<()>
     where
-        F: Fn(&'callback Lua, Core) -> Result<()> + 'static,
+        F: Fn(&'callback Lua) -> Result<()> + 'static,
     {
-        let func = self
-            .0
-            .create_function(move |lua, ()| func(lua, Core::new(lua)?))?;
-        self.1.call_function("register_init", func)
+        let func = self.lua.create_function(move |lua, ()| func(lua))?;
+        self.class.call_function("register_init", func)
     }
 
     pub fn register_task<'callback, F>(&self, func: F) -> Result<()>
     where
-        F: Fn(&'callback Lua, Core) -> Result<()> + 'static,
+        F: Fn(&'callback Lua) -> Result<()> + 'static,
     {
-        let func = self
-            .0
-            .create_function(move |lua, ()| func(lua, Core::new(lua)?))?;
-        self.1.call_function("register_task", func)
+        let func = self.lua.create_function(move |lua, ()| func(lua))?;
+        self.class.call_function("register_task", func)
     }
 
-    // pub fn register_cli<'callback, F>(&self, func: F) -> Result<()>
-    // where
-    //     F: Fn(&'callback Lua) -> Result<()> + 'static,
-    // {
-    //     let func = self.0.create_function(move |lua, ()| func(lua))?;
-    //     self.1.call_function("register_task", func)
-    // }
+    pub fn register_async_task<'callback, F, FR>(&self, func: F) -> Result<()>
+    where
+        F: Fn(&'callback Lua) -> FR + 'static,
+        FR: Future<Output = Result<()>> + 'static,
+    {
+        let func = self.lua.create_async_function(move |lua, ()| func(lua))?;
+        self.class.call_function("register_task", func)
+    }
+
+    // TODO: register_cli
 
     pub fn set_nice(&self, nice: i32) -> Result<()> {
-        self.1.call_function("set_nice", nice)
+        self.class.call_function("set_nice", nice)
     }
 
     pub fn set_map(&self, filename: &str, key: &str, value: &str) -> Result<()> {
-        self.1.call_function("set_map", (filename, key, value))
+        self.class.call_function("set_map", (filename, key, value))
     }
 
     pub fn sleep(&self, seconds: usize) -> Result<()> {
-        self.1.call_function("sleep", seconds)
+        self.class.call_function("sleep", seconds)
     }
 
-    // TODO
-    pub fn tcp(&self) -> Result<Table> {
-        self.1.call_function("tcp", ())
-    }
-
-    // Drop: concat()
-
+    // TODO: tcp
     // TODO: parse_addr
     // TODO: match_addr
     // TODO: tokenize
-
-    // pub fn get_backend(&self, name: &str) -> LuaResult<Option<LuaTable>> {
-    //     let backends: LuaTable = self.1.get("backends")?;
-    //     return backends.get(name);
-    // }
 }
 
 impl<'lua> ToLua<'lua> for LogLevel {
