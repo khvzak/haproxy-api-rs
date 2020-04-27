@@ -151,6 +151,17 @@ impl<'lua> Core<'lua> {
         self.class.call_function("register_fetches", (name, func))
     }
 
+    pub fn register_async_fetches<'callback, A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
+    where
+        A: FromLuaMulti<'callback>,
+        R: ToLua<'callback>,
+        F: Fn(&'callback Lua, A) -> FR + 'static,
+        FR: Future<Output = Result<R>> + 'static,
+    {
+        let func = self.lua.create_async_function(func)?;
+        self.class.call_function("register_fetches", (name, func))
+    }
+
     pub fn register_service<'callback, A, F>(
         &self,
         name: &str,
