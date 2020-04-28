@@ -1,7 +1,8 @@
 use std::future::Future;
-use std::sync::Once;
 
-use mlua::{ExternalError, FromLua, FromLuaMulti, Lua, Result, Table, TableExt, ToLua, Value};
+use mlua::{
+    ExternalError, FromLua, FromLuaMulti, Function, Lua, Result, Table, TableExt, ToLua, Value,
+};
 
 #[derive(Clone)]
 pub struct Core<'lua> {
@@ -33,8 +34,6 @@ pub enum LogLevel {
     Debug,
 }
 
-static START: Once = Once::new();
-
 impl<'lua> Core<'lua> {
     // TODO: add_acl
     // TODO: del_acl
@@ -42,13 +41,6 @@ impl<'lua> Core<'lua> {
 
     pub fn new(lua: &'lua Lua) -> Result<Self> {
         let class: Table = lua.globals().get("core")?;
-
-        START.call_once(|| {
-            lua.load(r"coroutine.yield = core.yield")
-                .exec()
-                .expect("init haproxy-api");
-        });
-
         Ok(Core { lua, class })
     }
 
@@ -125,6 +117,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'callback Lua, A) -> FR + 'static,
         FR: Future<Output = Result<()>> + 'static,
     {
+        let _yield_fixup = YieldFixUp::new(self.lua)?;
         let func = self.lua.create_async_function(func)?;
         self.class
             .call_function("register_action", (name, actions.to_vec(), func, nb_args))
@@ -158,6 +151,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'callback Lua, A) -> FR + 'static,
         FR: Future<Output = Result<R>> + 'static,
     {
+        let _yield_fixup = YieldFixUp::new(self.lua)?;
         let func = self.lua.create_async_function(func)?;
         self.class.call_function("register_fetches", (name, func))
     }
@@ -192,6 +186,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'callback Lua, A) -> FR + 'static,
         FR: Future<Output = Result<()>> + 'static,
     {
+        let _yield_fixup = YieldFixUp::new(self.lua)?;
         let func = self.lua.create_async_function(func)?;
         let mode = match mode {
             ServiceMode::Tcp => "tcp",
@@ -222,6 +217,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'callback Lua) -> FR + 'static,
         FR: Future<Output = Result<()>> + 'static,
     {
+        let _yield_fixup = YieldFixUp::new(self.lua)?;
         let func = self.lua.create_async_function(move |lua, ()| func(lua))?;
         self.class.call_function("register_task", func)
     }
@@ -259,5 +255,28 @@ impl<'lua> ToLua<'lua> for LogLevel {
             LogLevel::Debug => 7,
         })
         .to_lua(lua)
+    }
+}
+
+struct YieldFixUp<'lua>(&'lua Lua, Function<'lua>);
+
+impl<'lua> YieldFixUp<'lua> {
+    fn new(lua: &'lua Lua) -> Result<Self> {
+        let coroutine: Table = lua.globals().get("coroutine")?;
+        let orig_yield: Function = coroutine.get("yield")?;
+        let core: Table = lua.globals().get("core")?;
+        coroutine.set("yield", core.get::<_, Function>("yield")?)?;
+        Ok(YieldFixUp(lua, orig_yield))
+    }
+}
+
+impl<'lua> Drop for YieldFixUp<'lua> {
+    fn drop(&mut self) {
+        if let Err(e) = (|| {
+            let coroutine: Table = self.0.globals().get("coroutine")?;
+            coroutine.set("yield", self.1.clone())
+        })() {
+            println!("Error in YieldFixUp destructor: {}", e);
+        }
     }
 }
