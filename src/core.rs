@@ -134,6 +134,18 @@ impl<'lua> Core<'lua> {
             .call_function("register_converters", (name, func))
     }
 
+    pub fn register_async_converters<'callback, A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
+    where
+        A: FromLuaMulti<'callback>,
+        R: ToLua<'callback>,
+        F: Fn(&'callback Lua, A) -> FR + 'static,
+        FR: Future<Output = Result<R>> + 'static,
+    {
+        let _yield_fixup = YieldFixUp::new(self.lua)?;
+        let func = self.lua.create_async_function(func)?;
+        self.class.call_function("register_converters", (name, func))
+    }
+
     pub fn register_fetches<'callback, A, R, F>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'callback>,
