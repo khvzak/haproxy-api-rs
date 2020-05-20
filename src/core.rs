@@ -1,8 +1,12 @@
+use std::collections::HashMap;
 use std::future::Future;
 
 use mlua::{
-    ExternalError, FromLua, FromLuaMulti, Function, Lua, Result, Table, TableExt, ToLua, Value,
+    ExternalError, FromLua, FromLuaMulti, Function, Lua, Result, Table, TableExt, ToLua,
+    ToLuaMulti, Value,
 };
+
+use crate::Proxy;
 
 #[derive(Clone)]
 pub struct Core<'lua> {
@@ -44,6 +48,18 @@ impl<'lua> Core<'lua> {
         Ok(Core { lua, class })
     }
 
+    pub fn proxies(&self) -> Result<HashMap<String, Proxy>> {
+        self.class.get("proxies")
+    }
+
+    pub fn backends(&self) -> Result<HashMap<String, Proxy>> {
+        self.class.get("backends")
+    }
+
+    pub fn frontends(&self) -> Result<HashMap<String, Proxy>> {
+        self.class.get("frontends")
+    }
+
     pub fn log<S: AsRef<str>>(&self, level: LogLevel, msg: S) -> Result<()> {
         let msg = msg.as_ref();
         self.class.call_function("log", (level, msg))
@@ -63,31 +79,23 @@ impl<'lua> Core<'lua> {
 
     pub fn http_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("http_date", date)?;
-        date.ok_or("invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".to_lua_err())
     }
 
     pub fn imf_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("imf_date", date)?;
-        date.ok_or("invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".to_lua_err())
     }
 
     pub fn rfc850_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("rfc850_date", date)?;
-        date.ok_or("invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".to_lua_err())
     }
 
     pub fn asctime_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("asctime_date", date)?;
-        date.ok_or("invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".to_lua_err())
     }
-
-    pub fn msleep(&self, milliseconds: u64) -> Result<()> {
-        self.class.call_function("msleep", milliseconds)
-    }
-
-    // TODO: proxies
-    // TODO: backends
-    // TODO: frontends
 
     pub fn register_action<'callback, A, F>(
         &self,
@@ -123,6 +131,14 @@ impl<'lua> Core<'lua> {
             .call_function("register_action", (name, actions.to_vec(), func, nb_args))
     }
 
+    pub fn register_lua_action<S>(&self, code: &S) -> Result<()>
+    where
+        S: AsRef<[u8]> + ?Sized,
+    {
+        let func = self.lua.load(code).into_function()?;
+        self.class.call_function("register_action", func)
+    }
+
     pub fn register_converters<'callback, A, R, F>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'callback>,
@@ -134,7 +150,11 @@ impl<'lua> Core<'lua> {
             .call_function("register_converters", (name, func))
     }
 
-    pub fn register_async_converters<'callback, A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
+    pub fn register_async_converters<'callback, A, R, F, FR>(
+        &self,
+        name: &str,
+        func: F,
+    ) -> Result<()>
     where
         A: FromLuaMulti<'callback>,
         R: ToLua<'callback>,
@@ -143,7 +163,16 @@ impl<'lua> Core<'lua> {
     {
         let _yield_fixup = YieldFixUp::new(self.lua)?;
         let func = self.lua.create_async_function(func)?;
-        self.class.call_function("register_converters", (name, func))
+        self.class
+            .call_function("register_converters", (name, func))
+    }
+
+    pub fn register_lua_converters<S>(&self, code: &S) -> Result<()>
+    where
+        S: AsRef<[u8]> + ?Sized,
+    {
+        let func = self.lua.load(code).into_function()?;
+        self.class.call_function("register_converters", func)
     }
 
     pub fn register_fetches<'callback, A, R, F>(&self, name: &str, func: F) -> Result<()>
@@ -166,6 +195,14 @@ impl<'lua> Core<'lua> {
         let _yield_fixup = YieldFixUp::new(self.lua)?;
         let func = self.lua.create_async_function(func)?;
         self.class.call_function("register_fetches", (name, func))
+    }
+
+    pub fn register_lua_fetches<S>(&self, code: &S) -> Result<()>
+    where
+        S: AsRef<[u8]> + ?Sized,
+    {
+        let func = self.lua.load(code).into_function()?;
+        self.class.call_function("register_fetches", func)
     }
 
     pub fn register_service<'callback, A, F>(
@@ -208,6 +245,14 @@ impl<'lua> Core<'lua> {
             .call_function("register_service", (name, mode, func))
     }
 
+    pub fn register_lua_service<S>(&self, code: &S) -> Result<()>
+    where
+        S: AsRef<[u8]> + ?Sized,
+    {
+        let func = self.lua.load(code).into_function()?;
+        self.class.call_function("register_service", func)
+    }
+
     pub fn register_init<'callback, F>(&self, func: F) -> Result<()>
     where
         F: Fn(&'callback Lua) -> Result<()> + 'static,
@@ -234,10 +279,30 @@ impl<'lua> Core<'lua> {
         self.class.call_function("register_task", func)
     }
 
+    pub fn register_lua_task<S>(&self, code: &S) -> Result<()>
+    where
+        S: AsRef<[u8]> + ?Sized,
+    {
+        let func = self.lua.load(code).into_function()?;
+        self.class.call_function("register_task", func)
+    }
+
     // TODO: register_cli
 
     pub fn set_nice(&self, nice: i32) -> Result<()> {
         self.class.call_function("set_nice", nice)
+    }
+
+    pub fn add_acl(&self, filename: &str, key: &str) -> Result<()> {
+        self.class.call_function("add_acl", (filename, key))
+    }
+
+    pub fn del_acl(&self, filename: &str, key: &str) -> Result<()> {
+        self.class.call_function("del_acl", (filename, key))
+    }
+
+    pub fn del_map(&self, filename: &str, key: &str) -> Result<()> {
+        self.class.call_function("del_map", (filename, key))
     }
 
     pub fn set_map(&self, filename: &str, key: &str, value: &str) -> Result<()> {
@@ -248,10 +313,14 @@ impl<'lua> Core<'lua> {
         self.class.call_function("sleep", seconds)
     }
 
+    pub fn msleep(&self, milliseconds: u64) -> Result<()> {
+        self.class.call_function("msleep", milliseconds)
+    }
+
     // TODO: tcp
-    // TODO: parse_addr
-    // TODO: match_addr
-    // TODO: tokenize
+    // TODO?: parse_addr
+    // TODO?: match_addr
+    // TODO?: tokenize
 }
 
 impl<'lua> ToLua<'lua> for LogLevel {
@@ -268,6 +337,20 @@ impl<'lua> ToLua<'lua> for LogLevel {
         })
         .to_lua(lua)
     }
+}
+
+pub fn create_async_function<'lua, 'callback, A, R, F, FR>(
+    lua: &'lua Lua,
+    func: F,
+) -> Result<Function<'lua>>
+where
+    A: FromLuaMulti<'callback>,
+    R: ToLuaMulti<'callback>,
+    F: 'static + Fn(&'callback Lua, A) -> FR,
+    FR: 'static + Future<Output = Result<R>>,
+{
+    let _yield_fixup = YieldFixUp::new(lua)?;
+    lua.create_async_function(func)
 }
 
 struct YieldFixUp<'lua>(&'lua Lua, Function<'lua>);

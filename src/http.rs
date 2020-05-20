@@ -182,7 +182,7 @@ impl<'lua> FromLua<'lua> for AppletHttp<'lua> {
             query_string: class.get("qs")?,
             body_length: class.get("length")?,
             headers: class.get("headers")?,
-            class: class,
+            class,
         })
     }
 }

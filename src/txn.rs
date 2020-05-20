@@ -61,7 +61,7 @@ impl<'lua> FromLua<'lua> for Txn<'lua> {
             f: class.get("f")?,
             req: class.get("req")?,
             res: class.get("res")?,
-            class: class,
+            class,
         })
     }
 }
