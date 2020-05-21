@@ -1,22 +1,20 @@
 use mlua::{FromLua, Lua, Result, Table, TableExt, ToLua, Value};
 
-use crate::{Channel, Converters, Fetches, Http, LogLevel};
+use crate::{Converters, Fetches, Http, LogLevel};
 
 pub struct Txn<'lua> {
     class: Table<'lua>,
     pub c: Converters<'lua>,
     pub f: Fetches<'lua>,
-    pub req: Channel<'lua>,
-    pub res: Channel<'lua>,
 }
 
 impl<'lua> Txn<'lua> {
-    pub fn log(&self, level: LogLevel, msg: &str) -> Result<()> {
-        self.class.call_method("log", (level, msg))
-    }
-
     pub fn http(&self) -> Result<Http> {
         self.class.get("http")
+    }
+
+    pub fn log(&self, level: LogLevel, msg: &str) -> Result<()> {
+        self.class.call_method("log", (level, msg))
     }
 
     pub fn deflog(&self, msg: &str) -> Result<()> {
@@ -59,8 +57,6 @@ impl<'lua> FromLua<'lua> for Txn<'lua> {
         Ok(Txn {
             c: class.get("c")?,
             f: class.get("f")?,
-            req: class.get("req")?,
-            res: class.get("res")?,
             class,
         })
     }

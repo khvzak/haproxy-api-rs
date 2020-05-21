@@ -1,9 +1,8 @@
 [package]
 name = "haproxy-api"
-version = "0.0.0"
+version = "0.0.0-alpha.1"
 authors = ["Alex Orlenko"]
 edition = "2018"
 
 [dependencies]
 mlua = { version = "0.3.2", features = ["async"] }
-bstr = { version = "0.2", features = ["std"], default_features = false }
