@@ -1,8 +1,15 @@
 [package]
 name = "haproxy-api"
 version = "0.0.0-alpha.1"
-authors = ["Alex Orlenko"]
+authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
 edition = "2018"
+repository = "https://github.com/khvzak/haproxy-api-rs"
+documentation = "https://docs.rs/haproxy-api"
+keywords = ["haproxy"]
+license = "MIT"
+description = """
+HAProxy 2.x Lua API
+"""
 
 [dependencies]
 mlua = { version = "0.3.2", features = ["async"] }
