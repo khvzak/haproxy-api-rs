@@ -92,7 +92,7 @@ impl<'lua> Core<'lua> {
         date.ok_or_else(|| "invalid date".to_lua_err())
     }
 
-    pub fn register_action<'callback, A, F>(
+    pub fn register_action<A, F>(
         &self,
         name: &str,
         actions: &[&str],
@@ -100,15 +100,15 @@ impl<'lua> Core<'lua> {
         nb_args: usize,
     ) -> Result<()>
     where
-        A: FromLuaMulti<'callback>,
-        F: Fn(&'callback Lua, A) -> Result<()> + 'static,
+        A: FromLuaMulti<'lua>,
+        F: Fn(&'lua Lua, A) -> Result<()> + Send + 'static,
     {
         let func = self.lua.create_function(func)?;
         self.class
             .call_function("register_action", (name, actions.to_vec(), func, nb_args))
     }
 
-    pub fn register_async_action<'callback, A, F, FR>(
+    pub fn register_async_action<A, F, FR>(
         &self,
         name: &str,
         actions: &[&str],
@@ -116,8 +116,8 @@ impl<'lua> Core<'lua> {
         nb_args: usize,
     ) -> Result<()>
     where
-        A: FromLuaMulti<'callback>,
-        F: Fn(&'callback Lua, A) -> FR + 'static,
+        A: FromLuaMulti<'lua>,
+        F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<()>> + 'static,
     {
         let _yield_fixup = YieldFixUp::new(self.lua)?;
@@ -134,26 +134,26 @@ impl<'lua> Core<'lua> {
         self.class.call_function("register_action", (name, actions.to_vec(), func, nb_args))
     }
 
-    pub fn register_converters<'callback, A, R, F>(&self, name: &str, func: F) -> Result<()>
+    pub fn register_converters<A, R, F>(&self, name: &str, func: F) -> Result<()>
     where
-        A: FromLuaMulti<'callback>,
-        R: ToLua<'callback>,
-        F: Fn(&'callback Lua, A) -> Result<R> + 'static,
+        A: FromLuaMulti<'lua>,
+        R: ToLua<'lua>,
+        F: Fn(&'lua Lua, A) -> Result<R> + Send + 'static,
     {
         let func = self.lua.create_function(func)?;
         self.class
             .call_function("register_converters", (name, func))
     }
 
-    pub fn register_async_converters<'callback, A, R, F, FR>(
+    pub fn register_async_converters<A, R, F, FR>(
         &self,
         name: &str,
         func: F,
     ) -> Result<()>
     where
-        A: FromLuaMulti<'callback>,
-        R: ToLua<'callback>,
-        F: Fn(&'callback Lua, A) -> FR + 'static,
+        A: FromLuaMulti<'lua>,
+        R: ToLua<'lua>,
+        F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<R>> + 'static,
     {
         let _yield_fixup = YieldFixUp::new(self.lua)?;
@@ -170,21 +170,21 @@ impl<'lua> Core<'lua> {
         self.class.call_function("register_converters", (name, func))
     }
 
-    pub fn register_fetches<'callback, A, R, F>(&self, name: &str, func: F) -> Result<()>
+    pub fn register_fetches<A, R, F>(&self, name: &str, func: F) -> Result<()>
     where
-        A: FromLuaMulti<'callback>,
-        R: ToLua<'callback>,
-        F: Fn(&'callback Lua, A) -> Result<R> + 'static,
+        A: FromLuaMulti<'lua>,
+        R: ToLua<'lua>,
+        F: Fn(&'lua Lua, A) -> Result<R> + Send + 'static,
     {
         let func = self.lua.create_function(func)?;
         self.class.call_function("register_fetches", (name, func))
     }
 
-    pub fn register_async_fetches<'callback, A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
+    pub fn register_async_fetches<A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
     where
-        A: FromLuaMulti<'callback>,
-        R: ToLua<'callback>,
-        F: Fn(&'callback Lua, A) -> FR + 'static,
+        A: FromLuaMulti<'lua>,
+        R: ToLua<'lua>,
+        F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<R>> + 'static,
     {
         let _yield_fixup = YieldFixUp::new(self.lua)?;
@@ -212,25 +212,25 @@ impl<'lua> Core<'lua> {
         self.class.call_function("register_service", (name, mode, func))
     }
 
-    pub fn register_init<'callback, F>(&self, func: F) -> Result<()>
+    pub fn register_init<F>(&self, func: F) -> Result<()>
     where
-        F: Fn(&'callback Lua) -> Result<()> + 'static,
+        F: Fn(&'lua Lua) -> Result<()> + Send + 'static,
     {
         let func = self.lua.create_function(move |lua, ()| func(lua))?;
         self.class.call_function("register_init", func)
     }
 
-    pub fn register_task<'callback, F>(&self, func: F) -> Result<()>
+    pub fn register_task<F>(&self, func: F) -> Result<()>
     where
-        F: Fn(&'callback Lua) -> Result<()> + 'static,
+        F: Fn(&'lua Lua) -> Result<()> + Send + 'static,
     {
         let func = self.lua.create_function(move |lua, ()| func(lua))?;
         self.class.call_function("register_task", func)
     }
 
-    pub fn register_async_task<'callback, F, FR>(&self, func: F) -> Result<()>
+    pub fn register_async_task<F, FR>(&self, func: F) -> Result<()>
     where
-        F: Fn(&'callback Lua) -> FR + 'static,
+        F: Fn(&'lua Lua) -> FR + Send + 'static,
         FR: Future<Output = Result<()>> + 'static,
     {
         let _yield_fixup = YieldFixUp::new(self.lua)?;
@@ -287,15 +287,15 @@ impl<'lua> ToLua<'lua> for LogLevel {
     }
 }
 
-pub fn create_async_function<'lua, 'callback, A, R, F, FR>(
+pub fn create_async_function<'lua, A, R, F, FR>(
     lua: &'lua Lua,
     func: F,
 ) -> Result<Function<'lua>>
 where
-    A: FromLuaMulti<'callback>,
-    R: ToLuaMulti<'callback>,
-    F: 'static + Fn(&'callback Lua, A) -> FR,
-    FR: 'static + Future<Output = Result<R>>,
+    A: FromLuaMulti<'lua>,
+    R: ToLuaMulti<'lua>,
+    F: 'static + Send + Fn(&'lua Lua, A) -> FR,
+    FR: 'lua + Future<Output = Result<R>>,
 {
     let _yield_fixup = YieldFixUp::new(lua)?;
     lua.create_async_function(func)
