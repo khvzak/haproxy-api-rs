@@ -1,4 +1,4 @@
-use mlua::{FromLua, Lua, Result, Table, TableExt, ToLua, Value};
+use mlua::{FromLua, Lua, Result, String as LuaString, Table, TableExt, TablePairs, ToLua, Value};
 
 #[derive(Clone)]
 pub struct Http<'lua>(Table<'lua>);
@@ -69,12 +69,16 @@ impl<'lua> Http<'lua> {
 }
 
 impl<'lua> Headers<'lua> {
+    pub fn pairs(self) -> HeaderPairs<'lua> {
+        HeaderPairs(self.0.pairs())
+    }
+
     pub fn get(&self, name: &str) -> Result<Vec<String>> {
         let name = name.to_ascii_lowercase();
         let mut result = Vec::new();
         if let Some(values) = self.0.get::<_, Option<Table>>(name)? {
-            for v in values.pairs::<i32, _>() {
-                result.push(v?.1);
+            for v in values.pairs::<i32, LuaString>() {
+                result.push(String::from_utf8_lossy(v?.1.as_bytes()).into_owned());
             }
         }
         Ok(result)
@@ -83,7 +87,8 @@ impl<'lua> Headers<'lua> {
     pub fn get_first(&self, name: &str) -> Result<Option<String>> {
         let name = name.to_ascii_lowercase();
         if let Some(values) = self.0.get::<_, Option<Table>>(name)? {
-            return values.get(0); // Indexes start from "0"
+            let val: LuaString = values.get(0)?; // Indexes starts from "0"
+            return Ok(Some(String::from_utf8_lossy(val.as_bytes()).into_owned()));
         }
         Ok(None)
     }
@@ -98,5 +103,33 @@ impl<'lua> FromLua<'lua> for Http<'lua> {
 impl<'lua> FromLua<'lua> for Headers<'lua> {
     fn from_lua(value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
         Ok(Headers(Table::from_lua(value, lua)?))
+    }
+}
+
+pub struct HeaderPairs<'lua>(TablePairs<'lua, LuaString<'lua>, Option<Table<'lua>>>);
+
+impl<'lua> Iterator for HeaderPairs<'lua> {
+    type Item = Result<(String, Vec<String>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.0.next() {
+            Some(Ok(item)) => {
+                let name = String::from_utf8_lossy(item.0.as_bytes()).into_owned();
+                let mut values = Vec::new();
+                if let Some(t) = item.1 {
+                    for pair in t.pairs::<i32, LuaString>() {
+                        match pair {
+                            Ok((_, val)) => {
+                                values.push(String::from_utf8_lossy(val.as_bytes()).into_owned());
+                            }
+                            Err(e) => return Some(Err(e)),
+                        }
+                    }
+                }
+                Some(Ok((name, values)))
+            }
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
     }
 }
