@@ -1,9 +1,11 @@
 use mlua::{FromLua, Lua, Result, Table, TableExt, ToLuaMulti, Value};
 
+/// The "Fetches" class allows to call a lot of internal HAProxy sample fetches.
 #[derive(Clone)]
 pub struct Fetches<'lua>(Table<'lua>);
 
 impl<'lua> Fetches<'lua> {
+    /// Executes an internal haproxy sample fetch.
     pub fn get<A, R>(&self, name: &str, args: A) -> Result<R>
     where
         A: ToLuaMulti<'lua>,
@@ -12,11 +14,15 @@ impl<'lua> Fetches<'lua> {
         self.0.call_method(name, args)
     }
 
-    pub fn get_str<A>(&self, name: &str, args: A) -> Result<Option<String>>
+    /// The same as `get` but always returns string.
+    pub fn get_str<A>(&self, name: &str, args: A) -> Result<String>
     where
         A: ToLuaMulti<'lua>,
     {
-        self.0.call_method(name, args)
+        Ok(match self.0.call_method(name, args)? {
+            Some(val) => val,
+            None => String::new(),
+        })
     }
 }
 

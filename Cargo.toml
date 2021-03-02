@@ -1,15 +1,27 @@
 [package]
 name = "haproxy-api"
-version = "0.1.1-alpha.1"
+version = "0.2.0"
 authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
 edition = "2018"
 repository = "https://github.com/khvzak/haproxy-api-rs"
 documentation = "https://docs.rs/haproxy-api"
+readme = "README.md"
 keywords = ["haproxy"]
 license = "MIT"
 description = """
 HAProxy 2.x Lua API
 """
 
+[workspace]
+members = [
+    "examples/async_serve_file",
+    "examples/simple",
+]
+
+[features]
+lua53 = ["mlua/lua53"]
+lua54 = ["mlua/lua54"]
+vendored = ["mlua/vendored"]
+
 [dependencies]
-mlua = { version = "0.4.1", features = ["async", "send", "lua53"] }
+mlua = { version = "0.5.3", features = ["async", "send", "serialize"] }

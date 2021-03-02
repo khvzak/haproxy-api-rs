@@ -2,16 +2,19 @@ use std::collections::HashMap;
 
 use mlua::{FromLua, Lua, Result, Table, TableExt, Value};
 
-use crate::Server;
+use crate::{Server, StickTable};
 
+/// The "Proxy" class provides a way for manipulating proxy
+/// and retrieving information like statistics.
 #[derive(Clone)]
 pub struct Proxy<'lua> {
     class: Table<'lua>,
     pub name: String,
     pub uuid: String,
+    pub stktable: Option<StickTable<'lua>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProxyCapability {
     Frontend,
     Backend,
@@ -19,7 +22,7 @@ pub enum ProxyCapability {
     Ruleset,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProxyMode {
     Tcp,
     Http,
@@ -28,22 +31,31 @@ pub enum ProxyMode {
 }
 
 impl<'lua> Proxy<'lua> {
+    /// Pauses the proxy.
+    /// See the management socket documentation for more information.
     pub fn pause(&self) -> Result<()> {
         self.class.call_method("pause", ())
     }
 
+    /// Resumes the proxy.
+    /// See the management socket documentation for more information.
     pub fn resume(&self) -> Result<()> {
         self.class.call_method("resume", ())
     }
 
+    /// Stops the proxy.
+    /// See the management socket documentation for more information.
     pub fn stop(&self) -> Result<()> {
         self.class.call_method("stop", ())
     }
 
+    /// Kills the session attached to a backup server.
+    /// See the management socket documentation for more information.
     pub fn shut_bcksess(&self) -> Result<()> {
         self.class.call_method("shut_bcksess", ())
     }
 
+    /// Returns a enum describing the capabilities of the proxy.
     pub fn get_cap(&self) -> Result<ProxyCapability> {
         let cap: String = self.class.call_method("get_cap", ())?;
         match cap.as_str() {
@@ -54,6 +66,7 @@ impl<'lua> Proxy<'lua> {
         }
     }
 
+    /// Returns a enum describing the mode of the current proxy.
     pub fn get_mode(&self) -> Result<ProxyMode> {
         let mode: String = self.class.call_method("get_mode", ())?;
         match mode.as_str() {
@@ -64,13 +77,18 @@ impl<'lua> Proxy<'lua> {
         }
     }
 
-    // TODO: get_stats
+    /// Returns a table containing the proxy statistics.
+    /// The statistics returned are not the same if the proxy is frontend or a backend.
+    pub fn get_stats(&self) -> Result<Table<'lua>> {
+        self.class.call_method("get_stats", ())
+    }
 
-    pub fn servers(&self) -> Result<HashMap<String, Server>> {
+    /// Returns a map with the attached servers.
+    /// The map is indexed by server name.
+    pub fn servers(&self) -> Result<HashMap<String, Server<'lua>>> {
         self.class.get("servers")
     }
 
-    // TODO: stktable
     // TODO: listeners
 }
 
@@ -80,6 +98,7 @@ impl<'lua> FromLua<'lua> for Proxy<'lua> {
         Ok(Proxy {
             name: class.get("name")?,
             uuid: class.get("uuid")?,
+            stktable: class.get("stktable")?,
             class,
         })
     }
