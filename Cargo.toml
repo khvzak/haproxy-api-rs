@@ -12,6 +12,9 @@ description = """
 HAProxy 2.x Lua API
 """
 
+[package.metadata.docs.rs]
+features = ["lua53", "vendored"]
+
 [workspace]
 members = [
     "examples/async_serve_file",
