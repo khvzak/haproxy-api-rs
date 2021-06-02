@@ -69,6 +69,13 @@ impl<'lua> Core<'lua> {
         self.class.get("frontends")
     }
 
+    /// Returns the executing thread number starting at 0.
+    /// If thread is 0, Lua scope is shared by all threads, otherwise the scope is dedicated to a single thread.
+    /// This is HAProxy 2.4 feature.
+    pub fn thread(&self) -> Result<u16> {
+        self.class.get("thread")
+    }
+
     /// Sends a log on the default syslog server if it is configured and on the stderr if it is allowed.
     pub fn log<S>(&self, level: LogLevel, msg: &S) -> Result<()>
     where
