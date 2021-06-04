@@ -145,7 +145,7 @@ impl<'lua, V: FromLua<'lua>> Iterator for HeaderPairs<'lua, V> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.pairs.next() {
             Some(Ok(item)) => {
-                let name = String::from_utf8_lossy(item.0.as_bytes()).into_owned();
+                let name = item.0.to_string_lossy().into_owned();
                 let pairs = item.1.pairs::<i32, V>().collect::<Result<Vec<_>>>();
                 match pairs {
                     Ok(mut pairs) => {
