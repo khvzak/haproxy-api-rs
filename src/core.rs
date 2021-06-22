@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::future::Future;
 
 use mlua::{
-    AnyUserData, ExternalError, FromLuaMulti, Function, Lua, Result, Table, TableExt, ToLua,
-    ToLuaMulti, Value,
+    AnyUserData, AsChunk, ExternalError, FromLuaMulti, Function, Lua, Result, Table, TableExt,
+    ToLua, ToLuaMulti, Value,
 };
 
 use crate::Proxy;
@@ -209,7 +209,7 @@ impl<'lua> Core<'lua> {
         code: &S,
     ) -> Result<()>
     where
-        S: AsRef<[u8]> + ?Sized,
+        S: AsChunk<'lua> + ?Sized,
     {
         let func = self.lua.load(code).into_function()?;
         self.class
@@ -248,7 +248,7 @@ impl<'lua> Core<'lua> {
     /// [`register_converters`]: #method.register_converters
     pub fn register_lua_converters<S>(&self, name: &str, code: &S) -> Result<()>
     where
-        S: AsRef<[u8]> + ?Sized,
+        S: AsChunk<'lua> + ?Sized,
     {
         let func = self.lua.load(code).into_function()?;
         self.class
@@ -285,7 +285,7 @@ impl<'lua> Core<'lua> {
     /// [`register_fetches`]: #method.register_fetches
     pub fn register_lua_fetches<S>(&self, name: &str, code: &S) -> Result<()>
     where
-        S: AsRef<[u8]> + ?Sized,
+        S: AsChunk<'lua> + ?Sized,
     {
         let func = self.lua.load(code).into_function()?;
         self.class.call_function("register_fetches", (name, func))
@@ -295,7 +295,7 @@ impl<'lua> Core<'lua> {
     /// All the registered service can be used in HAProxy with the prefix `lua.`.
     pub fn register_lua_service<S>(&self, name: &str, mode: ServiceMode, code: &S) -> Result<()>
     where
-        S: AsRef<[u8]> + ?Sized,
+        S: AsChunk<'lua> + ?Sized,
     {
         let func = self.lua.load(code).into_function()?;
         let mode = match mode {
@@ -342,7 +342,7 @@ impl<'lua> Core<'lua> {
     /// [`register_task`]: #method.register_task
     pub fn register_lua_task<S>(&self, code: &S) -> Result<()>
     where
-        S: AsRef<[u8]> + ?Sized,
+        S: AsChunk<'lua> + ?Sized,
     {
         let func = self.lua.load(code).into_function()?;
         self.class.call_function("register_task", func)
@@ -351,7 +351,7 @@ impl<'lua> Core<'lua> {
     /// Registers a Lua function executed as a cli command.
     pub fn register_lua_cli<S>(&self, path: &[&str], usage: &str, code: &S) -> Result<()>
     where
-        S: AsRef<[u8]> + ?Sized,
+        S: AsChunk<'lua> + ?Sized,
     {
         let func = self.lua.load(code).into_function()?;
         self.class
