@@ -13,12 +13,11 @@ fn haproxy_async_module(lua: &Lua) -> LuaResult<bool> {
             Err(err) => Ok((None, Some(lua.create_string(&err.to_string())?))),
         }
     })?;
-    lua.globals().set("get_file", get_file)?;
 
-    let code = r#"
+    let code = mlua::chunk! {
         local applet = ...
-        -- Strip first '/'
-        local response, err = get_file(string.sub(applet.path, 2))
+        // Strip first '/'
+        local response, err = $get_file(string.sub(applet.path, 2))
         if err ~= nil then
             err = err.."\n"
             applet:set_status(404)
@@ -34,7 +33,7 @@ fn haproxy_async_module(lua: &Lua) -> LuaResult<bool> {
         applet:add_header("content-type", "application/octet-stream")
         applet:start_response()
         applet:send(response)
-    "#;
+    };
     core.register_lua_service("serve_file", ServiceMode::Http, code)?;
 
     Ok(true)

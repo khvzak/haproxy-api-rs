@@ -30,7 +30,7 @@ fn haproxy_simple_module(lua: &Lua) -> LuaResult<bool> {
         Ok(())
     })?;
 
-    let code = r#"
+    let code = mlua::chunk! {
         local applet = ...
         local response = "Hello, World!"
         applet:set_status(200)
@@ -38,7 +38,7 @@ fn haproxy_simple_module(lua: &Lua) -> LuaResult<bool> {
         applet:add_header("content-type", "text/plain")
         applet:start_response()
         applet:send(response)
-    "#;
+    };
     core.register_lua_service("rust_service", ServiceMode::Http, code)?;
 
     Ok(true)

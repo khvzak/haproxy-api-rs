@@ -7,11 +7,11 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [features]
-default = ["lua53", "vendored"]
+default = ["vendored"]
 lua54 = ["haproxy-api/lua54"]
 lua53 = ["haproxy-api/lua53"]
 vendored = ["haproxy-api/vendored"]
 
 [dependencies]
 haproxy-api = { path = "../.." }
-mlua = { version = "0.6.0-beta.3", features = ["module"] }
+mlua = { version = "0.6.0", features = ["module", "macros"] }
