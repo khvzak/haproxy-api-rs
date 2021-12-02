@@ -355,7 +355,7 @@ impl<'lua> Core<'lua> {
     {
         let func = self.lua.load(code).into_function()?;
         self.class
-            .call_function("register_service", (path, usage, func))
+            .call_function("register_cli", (path, usage, func))
     }
 
     /// Changes the nice of the current task or current session.
