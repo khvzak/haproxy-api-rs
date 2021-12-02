@@ -14,5 +14,5 @@ vendored = ["haproxy-api/vendored"]
 
 [dependencies]
 haproxy-api = { path = "../.." }
-mlua = { version = "0.6.0", features = ["module", "macros"] }
+mlua = { version = "0.7", features = ["module", "macros"] }
 async-std = "1.9.0"
