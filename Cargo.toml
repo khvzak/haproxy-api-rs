@@ -2,7 +2,7 @@
 name = "haproxy-api"
 version = "0.4.0"
 authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
-edition = "2018"
+edition = "2021"
 repository = "https://github.com/khvzak/haproxy-api-rs"
 documentation = "https://docs.rs/haproxy-api"
 readme = "README.md"
@@ -13,7 +13,7 @@ HAProxy 2.x Lua API
 """
 
 [package.metadata.docs.rs]
-features = ["lua53", "vendored"]
+features = ["lua54", "vendored"]
 
 [workspace]
 members = [
@@ -27,4 +27,4 @@ lua54 = ["mlua/lua54"]
 vendored = ["mlua/vendored"]
 
 [dependencies]
-mlua = { version = "0.7", features = ["async", "send", "serialize"] }
+mlua = { version = "0.8", features = ["async", "serialize"] }
