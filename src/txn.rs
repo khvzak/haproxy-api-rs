@@ -8,6 +8,7 @@ pub struct Txn<'lua> {
     class: Table<'lua>,
     pub c: Converters<'lua>,
     pub f: Fetches<'lua>,
+    pub(crate) r#priv: Value<'lua>,
 }
 
 impl<'lua> Txn<'lua> {
@@ -78,6 +79,7 @@ impl<'lua> FromLua<'lua> for Txn<'lua> {
             c: class.get("c")?,
             f: class.get("f")?,
             class,
+            r#priv: Value::Nil,
         })
     }
 }

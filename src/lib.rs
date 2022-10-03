@@ -7,19 +7,25 @@
 //! [Lua API]: http://www.arpalert.org/src/haproxy-lua-api/2.2/index.html
 //! [mlua]: https://crates.io/crates/mlua
 
+mod channel;
 mod converters;
 mod core;
 mod fetches;
+mod filter;
 mod http;
+mod http_message;
 mod proxy;
 mod server;
 mod stick_table;
 mod txn;
 
+pub use crate::channel::Channel;
 pub use crate::converters::Converters;
 pub use crate::core::{create_async_function, Action, Core, LogLevel, ServiceMode, Time};
 pub use crate::fetches::Fetches;
+pub use crate::filter::{FilterMethod, FilterResult, UserFilter};
 pub use crate::http::{Headers, Http};
+pub use crate::http_message::HttpMessage;
 pub use crate::proxy::Proxy;
 pub use crate::server::Server;
 pub use crate::stick_table::StickTable;

@@ -6,7 +6,8 @@ use mlua::{
     ToLua, ToLuaMulti, Value,
 };
 
-use crate::Proxy;
+use crate::filter::UserFilterWrapper;
+use crate::{Proxy, UserFilter};
 
 /// The "Core" class contains all the HAProxy core functions.
 #[derive(Clone)]
@@ -289,6 +290,18 @@ impl<'lua> Core<'lua> {
     {
         let func = self.lua.load(code).into_function()?;
         self.class.call_function("register_fetches", (name, func))
+    }
+
+    /// Registers a custom filter that implements [`UserFilter`] trait.
+    pub fn register_filter<T: UserFilter + 'static>(&self, name: &str) -> Result<()> {
+        let lua = self.lua;
+        let func = lua.create_function(|_, (class, args): (Table, Table)| {
+            class.raw_set("args", args)?;
+            Ok(class)
+        });
+        let filter_class = UserFilterWrapper::<T>::make_class(lua)?;
+        self.class
+            .call_function("register_filter", (name, filter_class, func))
     }
 
     /// Registers a Lua function executed as a service.
