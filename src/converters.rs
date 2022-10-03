@@ -6,6 +6,7 @@ pub struct Converters<'lua>(Table<'lua>);
 
 impl<'lua> Converters<'lua> {
     /// Executes an internal haproxy sample converter.
+    #[inline]
     pub fn get<A, R>(&self, name: &str, args: A) -> Result<R>
     where
         A: ToLuaMulti<'lua>,
@@ -15,6 +16,7 @@ impl<'lua> Converters<'lua> {
     }
 
     /// The same as `get` but always returns string.
+    #[inline]
     pub fn get_str<A>(&self, name: &str, args: A) -> Result<String>
     where
         A: ToLuaMulti<'lua>,
@@ -27,6 +29,7 @@ impl<'lua> Converters<'lua> {
 }
 
 impl<'lua> FromLua<'lua> for Converters<'lua> {
+    #[inline]
     fn from_lua(value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
         Ok(Converters(Table::from_lua(value, lua)?))
     }

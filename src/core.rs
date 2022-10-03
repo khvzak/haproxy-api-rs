@@ -50,22 +50,26 @@ pub enum LogLevel {
 
 impl<'lua> Core<'lua> {
     /// Creates new Core object using Lua global `core`
+    #[inline]
     pub fn new(lua: &'lua Lua) -> Result<Self> {
         let class: Table = lua.globals().get("core")?;
         Ok(Core { lua, class })
     }
 
     /// Returns a map of declared proxies (frontends and backends), indexed by proxy name.
+    #[inline]
     pub fn proxies(&self) -> Result<HashMap<String, Proxy<'lua>>> {
         self.class.get("proxies")
     }
 
     /// Returns a map of declared proxies with backend capability, indexed by the backend name.
+    #[inline]
     pub fn backends(&self) -> Result<HashMap<String, Proxy<'lua>>> {
         self.class.get("backends")
     }
 
     /// Returns a map of declared proxies with frontend capability, indexed by the frontend name.
+    #[inline]
     pub fn frontends(&self) -> Result<HashMap<String, Proxy<'lua>>> {
         self.class.get("frontends")
     }
@@ -73,11 +77,13 @@ impl<'lua> Core<'lua> {
     /// Returns the executing thread number starting at 0.
     /// If thread is 0, Lua scope is shared by all threads, otherwise the scope is dedicated to a single thread.
     /// This is HAProxy >=2.4 feature.
+    #[inline]
     pub fn thread(&self) -> Result<u16> {
         self.class.get("thread")
     }
 
     /// Sends a log on the default syslog server if it is configured and on the stderr if it is allowed.
+    #[inline]
     pub fn log<S>(&self, level: LogLevel, msg: &S) -> Result<()>
     where
         S: AsRef<str> + ?Sized,
@@ -87,27 +93,32 @@ impl<'lua> Core<'lua> {
     }
 
     /// Adds the ACL `key` in the ACLs list referenced by `filename`.
+    #[inline]
     pub fn add_acl(&self, filename: &str, key: &str) -> Result<()> {
         self.class.call_function("add_acl", (filename, key))
     }
 
     /// Deletes the ACL entry by `key` in the ACLs list referenced by `filename`.
+    #[inline]
     pub fn del_acl(&self, filename: &str, key: &str) -> Result<()> {
         self.class.call_function("del_acl", (filename, key))
     }
 
     /// Deletes the map entry indexed with the specified `key` in the list of maps
     /// referenced by his `filename`.
+    #[inline]
     pub fn del_map(&self, filename: &str, key: &str) -> Result<()> {
         self.class.call_function("del_map", (filename, key))
     }
 
     /// Sets the `value` associated to the `key` in the map referenced by `filename`.
+    #[inline]
     pub fn set_map(&self, filename: &str, key: &str, value: &str) -> Result<()> {
         self.class.call_function("set_map", (filename, key, value))
     }
 
     /// Returns HAProxy core information (uptime, pid, memory pool usage, tasks number, ...).
+    #[inline]
     pub fn get_info(&self) -> Result<Vec<String>> {
         self.class.call_function("get_info", ())
     }
@@ -115,6 +126,7 @@ impl<'lua> Core<'lua> {
     /// Returns the current time.
     /// The time returned is fixed by the HAProxy core and assures than the hour will be monotonic
     /// and that the system call `gettimeofday` will not be called too.
+    #[inline]
     pub fn now(&self) -> Result<Time> {
         let time: Table = self.class.call_function("now", ())?;
         Ok(Time {
@@ -126,6 +138,7 @@ impl<'lua> Core<'lua> {
     /// Takes a string representing http date, and returns an integer containing the corresponding date
     ///  with a epoch format.
     /// A valid http date me respect the format IMF, RFC850 or ASCTIME.
+    #[inline]
     pub fn http_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("http_date", date)?;
         date.ok_or_else(|| "invalid date".to_lua_err())
@@ -133,6 +146,7 @@ impl<'lua> Core<'lua> {
 
     /// Take a string representing IMF date, and returns an integer containing the corresponding date
     /// with a epoch format.
+    #[inline]
     pub fn imf_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("imf_date", date)?;
         date.ok_or_else(|| "invalid date".to_lua_err())
@@ -140,6 +154,7 @@ impl<'lua> Core<'lua> {
 
     /// Takess a string representing RFC850 date, and returns an integer containing the corresponding date
     /// with a epoch format.
+    #[inline]
     pub fn rfc850_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("rfc850_date", date)?;
         date.ok_or_else(|| "invalid date".to_lua_err())
@@ -147,6 +162,7 @@ impl<'lua> Core<'lua> {
 
     /// Takes a string representing ASCTIME date, and returns an integer containing the corresponding date
     /// with a epoch format.
+    #[inline]
     pub fn asctime_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("asctime_date", date)?;
         date.ok_or_else(|| "invalid date".to_lua_err())
@@ -372,17 +388,20 @@ impl<'lua> Core<'lua> {
     }
 
     /// Changes the nice of the current task or current session.
+    #[inline]
     pub fn set_nice(&self, nice: i32) -> Result<()> {
         self.class.call_function("set_nice", nice)
     }
 
     /// Parses ipv4 or ipv6 addresses and its facultative associated network.
+    #[inline]
     pub fn parse_addr(&self, addr: &str) -> Result<AnyUserData<'lua>> {
         self.class.call_function("parse_addr", addr)
     }
 
     /// Matches two networks.
     /// For example "127.0.0.1/32" matches "127.0.0.0/8". The order of network is not important.
+    #[inline]
     pub fn match_addr(&self, addr1: AnyUserData, addr2: AnyUserData) -> Result<bool> {
         self.class.call_function("match_addr", (addr1, addr2))
     }
