@@ -1,0 +1,17 @@
+[package]
+name = "haproxy_brotli_filter"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+lua54 = ["haproxy-api/lua54"]
+lua53 = ["haproxy-api/lua53"]
+
+[dependencies]
+haproxy-api = { path = "../.." }
+mlua = { version = "0.8", features = ["module", "macros"] }
+brotlic = "0.8"

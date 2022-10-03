@@ -18,6 +18,7 @@ features = ["lua54", "vendored"]
 [workspace]
 members = [
     "examples/async_serve_file",
+    "examples/brotli",
     "examples/simple",
 ]
 
