@@ -60,6 +60,7 @@ impl<'lua> Http<'lua> {
 
     /// Matches the regular expression in all occurrences of HTTP request header `name` according to `regex`,
     /// and replaces them with the `replace` argument.
+    ///
     /// The replacement value can contain back references like 1, 2, ...
     #[inline]
     pub fn req_rep_header(&self, name: &str, regex: &str, replace: &str) -> Result<()> {
@@ -68,6 +69,7 @@ impl<'lua> Http<'lua> {
 
     /// Matches the regular expression in all occurrences of HTTP response header `name` according to `regex`,
     /// and replaces them with the `replace` argument.
+    ///
     /// The replacement value can contain back references like 1, 2, ...
     #[inline]
     pub fn res_rep_header(&self, name: &str, regex: &str, replace: &str) -> Result<()> {
@@ -99,7 +101,7 @@ impl<'lua> Http<'lua> {
         self.0.call_method("req_set_uri", uri)
     }
 
-    /// Rewrites the response status code with the `code`.
+    /// Rewrites the response status code.
     /// If no custom reason is provided, it will be generated from the status.
     #[inline]
     pub fn res_set_status(&self, status: u16, reason: Option<&str>) -> Result<()> {

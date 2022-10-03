@@ -26,7 +26,7 @@ impl<'lua> StickTable<'lua> {
     /// Check out the HAProxy docs for "show table" for more details.
     #[inline]
     pub fn dump(&self, filter: Option<&str>) -> Result<Table<'lua>> {
-        self.class.call_method("filter", filter)
+        self.class.call_method("dump", filter)
     }
 }
 

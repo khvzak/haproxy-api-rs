@@ -84,10 +84,7 @@ impl<'lua> Core<'lua> {
 
     /// Sends a log on the default syslog server if it is configured and on the stderr if it is allowed.
     #[inline]
-    pub fn log<S>(&self, level: LogLevel, msg: &S) -> Result<()>
-    where
-        S: AsRef<str> + ?Sized,
-    {
+    pub fn log(&self, level: LogLevel, msg: impl AsRef<str>) -> Result<()> {
         let msg = msg.as_ref();
         self.class.call_function("log", (level, msg))
     }
@@ -410,6 +407,7 @@ impl<'lua> Core<'lua> {
 }
 
 impl<'lua> ToLua<'lua> for LogLevel {
+    #[inline]
     fn to_lua(self, lua: &'lua Lua) -> Result<Value<'lua>> {
         (match self {
             LogLevel::Emerg => 0,

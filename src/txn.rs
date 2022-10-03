@@ -20,10 +20,7 @@ impl<'lua> Txn<'lua> {
 
     /// Sends a log on the default syslog server if it is configured and on the stderr if it is allowed.
     #[inline]
-    pub fn log<S>(&self, level: LogLevel, msg: &S) -> Result<()>
-    where
-        S: AsRef<str> + ?Sized,
-    {
+    pub fn log(&self, level: LogLevel, msg: impl AsRef<str>) -> Result<()> {
         let msg = msg.as_ref();
         self.class.call_method("log", (level, msg))
     }
@@ -34,7 +31,7 @@ impl<'lua> Txn<'lua> {
     where
         S: AsRef<str> + ?Sized,
     {
-        self.class.call_method("log", msg.as_ref())
+        self.class.call_method("deflog", msg.as_ref())
     }
 
     /// Returns data stored in the current transaction (with the `set_priv()`) function.

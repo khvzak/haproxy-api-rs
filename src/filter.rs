@@ -9,13 +9,13 @@ use crate::{Channel, Core, HttpMessage, LogLevel, Txn};
 pub struct FilterMethod;
 
 impl FilterMethod {
-    const START_ANALYZE: u8 = 0b00000001;
-    const END_ANALYZE: u8 = 0b00000010;
-    const HTTP_HEADERS: u8 = 0b00000100;
-    const HTTP_PAYLOAD: u8 = 0b00001000;
-    const HTTP_END: u8 = 0b00010000;
+    pub const START_ANALYZE: u8 = 0b00000001;
+    pub const END_ANALYZE: u8 = 0b00000010;
+    pub const HTTP_HEADERS: u8 = 0b00000100;
+    pub const HTTP_PAYLOAD: u8 = 0b00001000;
+    pub const HTTP_END: u8 = 0b00010000;
 
-    const ALL: u8 = u8::MAX;
+    pub const ALL: u8 = u8::MAX;
 }
 
 /// A code that filter callback functions may return.
