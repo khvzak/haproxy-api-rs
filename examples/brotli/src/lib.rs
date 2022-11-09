@@ -204,7 +204,7 @@ impl UserFilter for BrotliFilter {
     }
 
     fn http_payload(&mut self, _: &Lua, _: Txn, msg: HttpMessage) -> LuaResult<Option<usize>> {
-        if let Some(chunk) = msg.body(None, None)? {
+        if let Some(chunk) = msg.body(None, Some(-1))? {
             let chunk = chunk.as_bytes();
             let writer = self.writer.as_mut().expect("Brotli writer must exists");
             if !chunk.is_empty() {
@@ -232,6 +232,6 @@ impl UserFilter for BrotliFilter {
 #[mlua::lua_module]
 fn haproxy_brotli_filter(lua: &Lua) -> LuaResult<bool> {
     let core = Core::new(lua)?;
-    core.register_filter::<BrotliFilter>("brotli").unwrap();
+    core.register_filter::<BrotliFilter>("brotli")?;
     Ok(true)
 }
