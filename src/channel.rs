@@ -1,4 +1,4 @@
-use mlua::{FromLua, Lua, Result, String as LuaString, Table, TableExt, ToLua, Value};
+use mlua::{FromLua, IntoLua, Lua, Result, String as LuaString, Table, TableExt, Value};
 
 /// The "Channel" class contains all functions to manipulate channels.
 ///
@@ -51,8 +51,7 @@ impl<'lua> Channel<'lua> {
     pub fn insert(&self, data: impl AsRef<[u8]>, offset: Option<isize>) -> Result<isize> {
         let data = self.lua.create_string(data.as_ref())?;
         let offset = offset.unwrap_or(0);
-        self.class
-            .call_method::<_, _, isize>("insert", (data, offset))
+        self.class.call_method::<_, isize>("insert", (data, offset))
     }
 
     /// Returns true if the channel buffer is full.
@@ -97,7 +96,7 @@ impl<'lua> Channel<'lua> {
     #[inline]
     pub fn prepend(&self, data: impl AsRef<[u8]>) -> Result<isize> {
         let data = self.lua.create_string(data.as_ref())?;
-        self.class.call_method::<_, _, isize>("prepend", data)
+        self.class.call_method::<_, isize>("prepend", data)
     }
 
     /// Removes `length` bytes of incoming data of the channel buffer, starting at `offset`.
@@ -145,9 +144,9 @@ impl<'lua> FromLua<'lua> for Channel<'lua> {
     }
 }
 
-impl<'lua> ToLua<'lua> for Channel<'lua> {
+impl<'lua> IntoLua<'lua> for Channel<'lua> {
     #[inline]
-    fn to_lua(self, _: &'lua Lua) -> Result<Value<'lua>> {
+    fn into_lua(self, _: &'lua Lua) -> Result<Value<'lua>> {
         Ok(Value::Table(self.class))
     }
 }

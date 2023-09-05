@@ -1,4 +1,4 @@
-use mlua::{FromLua, Lua, Result, Table, TableExt, ToLua, Value};
+use mlua::{FromLua, IntoLua, Lua, Result, Table, TableExt, Value};
 
 use crate::{Converters, Fetches, Http, LogLevel};
 
@@ -43,7 +43,7 @@ impl<'lua> Txn<'lua> {
     /// Stores any data in the current HAProxy transaction.
     /// This action replaces the old stored data.
     #[inline]
-    pub fn set_priv<A: ToLua<'lua>>(&self, val: A) -> Result<()> {
+    pub fn set_priv<A: IntoLua<'lua>>(&self, val: A) -> Result<()> {
         self.class.call_method("set_priv", val)
     }
 
@@ -55,7 +55,7 @@ impl<'lua> Txn<'lua> {
 
     /// Store variable `name` in an HAProxy converting the type.
     #[inline]
-    pub fn set_var<A: ToLua<'lua>>(&self, name: &str, val: A) -> Result<()> {
+    pub fn set_var<A: IntoLua<'lua>>(&self, name: &str, val: A) -> Result<()> {
         self.class.call_method("set_var", (name, val))
     }
 

@@ -13,5 +13,5 @@ lua53 = ["haproxy-api/lua53"]
 
 [dependencies]
 haproxy-api = { path = "../.." }
-mlua = { version = "0.8", features = ["module", "macros"] }
+mlua = { version = "0.9", features = ["macros"] }
 async-std = "1.0"

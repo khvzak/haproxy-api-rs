@@ -1,7 +1,7 @@
 use std::any::type_name;
 use std::ops::{Deref, DerefMut};
 
-use mlua::{AnyUserData, Lua, Result, Table, TableExt, ToLua, UserData, Value, Variadic};
+use mlua::{AnyUserData, IntoLua, Lua, Result, Table, TableExt, UserData, Value, Variadic};
 
 use crate::{Channel, Core, HttpMessage, LogLevel, Txn};
 
@@ -132,7 +132,7 @@ where
                     Err(err) => {
                         let core = Core::new(lua)?;
                         let msg = format!("Filter '{}': {err}", type_name::<T>());
-                        core.log(LogLevel::Err, &msg)?;
+                        core.log(LogLevel::Err, msg)?;
                         return Ok(Value::Nil);
                     }
                 };
@@ -189,14 +189,14 @@ where
                     let mut res = Variadic::new();
                     match this.http_payload(lua, txn, msg) {
                         Ok(Some(len)) => {
-                            res.push(len.to_lua(lua)?);
+                            res.push(len.into_lua(lua)?);
                         }
                         Ok(None) => {}
                         Err(err) if T::CONTINUE_IF_ERROR => {
                             if let Ok(core) = Core::new(lua) {
                                 let _ = core.log(
                                     LogLevel::Err,
-                                    &format!("Filter '{}': {}", type_name::<T>(), err),
+                                    format!("Filter '{}': {}", type_name::<T>(), err),
                                 );
                             }
                         }
@@ -230,7 +230,7 @@ where
                 if let Ok(core) = Core::new(lua) {
                     let _ = core.log(
                         LogLevel::Err,
-                        &format!("Filter '{}': {}", type_name::<T>(), err),
+                        format!("Filter '{}': {}", type_name::<T>(), err),
                     );
                 }
                 Ok(FilterResult::Continue.code())

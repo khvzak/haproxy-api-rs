@@ -92,8 +92,7 @@ impl<'lua> HttpMessage<'lua> {
     pub fn insert(&self, data: impl AsRef<[u8]>, offset: Option<isize>) -> Result<isize> {
         let data = self.lua.create_string(data.as_ref())?;
         let offset = offset.unwrap_or(0);
-        self.class
-            .call_method::<_, _, isize>("insert", (data, offset))
+        self.class.call_method::<_, isize>("insert", (data, offset))
     }
 
     /// Returns true if the HTTP message is full.
@@ -125,7 +124,7 @@ impl<'lua> HttpMessage<'lua> {
     #[inline]
     pub fn prepend(&self, data: impl AsRef<[u8]>) -> Result<isize> {
         let data = self.lua.create_string(data.as_ref())?;
-        self.class.call_method::<_, _, isize>("prepend", data)
+        self.class.call_method::<_, isize>("prepend", data)
     }
 
     /// Removes `length` bytes of incoming data of the HTTP message, starting at `offset`.

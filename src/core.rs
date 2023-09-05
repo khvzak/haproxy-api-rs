@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::future::Future;
 
 use mlua::{
-    AnyUserData, AsChunk, ExternalError, FromLuaMulti, Function, Lua, Result, Table, TableExt,
-    ToLua, ToLuaMulti, Value,
+    AnyUserData, AsChunk, ExternalError, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua,
+    Result, Table, TableExt, Value,
 };
 
 use crate::filter::UserFilterWrapper;
@@ -138,7 +138,7 @@ impl<'lua> Core<'lua> {
     #[inline]
     pub fn http_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("http_date", date)?;
-        date.ok_or_else(|| "invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".into_lua_err())
     }
 
     /// Take a string representing IMF date, and returns an integer containing the corresponding date
@@ -146,7 +146,7 @@ impl<'lua> Core<'lua> {
     #[inline]
     pub fn imf_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("imf_date", date)?;
-        date.ok_or_else(|| "invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".into_lua_err())
     }
 
     /// Takess a string representing RFC850 date, and returns an integer containing the corresponding date
@@ -154,7 +154,7 @@ impl<'lua> Core<'lua> {
     #[inline]
     pub fn rfc850_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("rfc850_date", date)?;
-        date.ok_or_else(|| "invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".into_lua_err())
     }
 
     /// Takes a string representing ASCTIME date, and returns an integer containing the corresponding date
@@ -162,7 +162,7 @@ impl<'lua> Core<'lua> {
     #[inline]
     pub fn asctime_date(&self, date: &str) -> Result<u64> {
         let date: Option<u64> = self.class.call_function("asctime_date", date)?;
-        date.ok_or_else(|| "invalid date".to_lua_err())
+        date.ok_or_else(|| "invalid date".into_lua_err())
     }
 
     /// Registers a function executed as an action.
@@ -215,15 +215,15 @@ impl<'lua> Core<'lua> {
     /// Same as [`register_action`] but using Lua function.
     ///
     /// [`register_action`]: #method.register_action
-    pub fn register_lua_action<S>(
+    pub fn register_lua_action<'a, S>(
         &self,
         name: &str,
         actions: &[&str],
         nb_args: usize,
-        code: &S,
+        code: S,
     ) -> Result<()>
     where
-        S: AsChunk<'lua> + ?Sized,
+        S: AsChunk<'lua, 'a>,
     {
         let func = self.lua.load(code).into_function()?;
         self.class
@@ -235,7 +235,7 @@ impl<'lua> Core<'lua> {
     pub fn register_converters<A, R, F>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'lua>,
-        R: ToLua<'lua>,
+        R: IntoLua<'lua>,
         F: Fn(&'lua Lua, A) -> Result<R> + Send + 'static,
     {
         let func = self.lua.create_function(func)?;
@@ -247,7 +247,7 @@ impl<'lua> Core<'lua> {
     pub fn register_async_converters<A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'lua>,
-        R: ToLua<'lua>,
+        R: IntoLua<'lua>,
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<R>> + 'static,
     {
@@ -260,9 +260,9 @@ impl<'lua> Core<'lua> {
     /// Same as [`register_converters`] but using Lua function.
     ///
     /// [`register_converters`]: #method.register_converters
-    pub fn register_lua_converters<S>(&self, name: &str, code: &S) -> Result<()>
+    pub fn register_lua_converters<'a, S>(&self, name: &str, code: S) -> Result<()>
     where
-        S: AsChunk<'lua> + ?Sized,
+        S: AsChunk<'lua, 'a>,
     {
         let func = self.lua.load(code).into_function()?;
         self.class
@@ -274,7 +274,7 @@ impl<'lua> Core<'lua> {
     pub fn register_fetches<A, R, F>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'lua>,
-        R: ToLua<'lua>,
+        R: IntoLua<'lua>,
         F: Fn(&'lua Lua, A) -> Result<R> + Send + 'static,
     {
         let func = self.lua.create_function(func)?;
@@ -285,7 +285,7 @@ impl<'lua> Core<'lua> {
     pub fn register_async_fetches<A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'lua>,
-        R: ToLua<'lua>,
+        R: IntoLua<'lua>,
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<R>> + 'static,
     {
@@ -297,9 +297,9 @@ impl<'lua> Core<'lua> {
     /// Same as [`register_fetches`] but using Lua function.
     ///
     /// [`register_fetches`]: #method.register_fetches
-    pub fn register_lua_fetches<S>(&self, name: &str, code: &S) -> Result<()>
+    pub fn register_lua_fetches<'a, S>(&self, name: &str, code: S) -> Result<()>
     where
-        S: AsChunk<'lua> + ?Sized,
+        S: AsChunk<'lua, 'a>,
     {
         let func = self.lua.load(code).into_function()?;
         self.class.call_function("register_fetches", (name, func))
@@ -319,9 +319,9 @@ impl<'lua> Core<'lua> {
 
     /// Registers a Lua function executed as a service.
     /// All the registered service can be used in HAProxy with the prefix `lua.`.
-    pub fn register_lua_service<S>(&self, name: &str, mode: ServiceMode, code: &S) -> Result<()>
+    pub fn register_lua_service<'a, S>(&self, name: &str, mode: ServiceMode, code: S) -> Result<()>
     where
-        S: AsChunk<'lua> + ?Sized,
+        S: AsChunk<'lua, 'a>,
     {
         let func = self.lua.load(code).into_function()?;
         let mode = match mode {
@@ -366,18 +366,18 @@ impl<'lua> Core<'lua> {
     /// Same as [`register_task`] but using Lua function.
     ///
     /// [`register_task`]: #method.register_task
-    pub fn register_lua_task<S>(&self, code: &S) -> Result<()>
+    pub fn register_lua_task<'a, S>(&self, code: S) -> Result<()>
     where
-        S: AsChunk<'lua> + ?Sized,
+        S: AsChunk<'lua, 'a>,
     {
         let func = self.lua.load(code).into_function()?;
         self.class.call_function("register_task", func)
     }
 
     /// Registers a Lua function executed as a cli command.
-    pub fn register_lua_cli<S>(&self, path: &[&str], usage: &str, code: &S) -> Result<()>
+    pub fn register_lua_cli<'a, S>(&self, path: &[&str], usage: &str, code: S) -> Result<()>
     where
-        S: AsChunk<'lua> + ?Sized,
+        S: AsChunk<'lua, 'a>,
     {
         let func = self.lua.load(code).into_function()?;
         self.class
@@ -406,9 +406,9 @@ impl<'lua> Core<'lua> {
     // SKIP: concat/done/yield/tokenize/etc
 }
 
-impl<'lua> ToLua<'lua> for LogLevel {
+impl<'lua> IntoLua<'lua> for LogLevel {
     #[inline]
-    fn to_lua(self, lua: &'lua Lua) -> Result<Value<'lua>> {
+    fn into_lua(self, lua: &'lua Lua) -> Result<Value<'lua>> {
         (match self {
             LogLevel::Emerg => 0,
             LogLevel::Alert => 1,
@@ -419,14 +419,14 @@ impl<'lua> ToLua<'lua> for LogLevel {
             LogLevel::Info => 6,
             LogLevel::Debug => 7,
         })
-        .to_lua(lua)
+        .into_lua(lua)
     }
 }
 
 pub fn create_async_function<'lua, A, R, F, FR>(lua: &'lua Lua, func: F) -> Result<Function<'lua>>
 where
     A: FromLuaMulti<'lua>,
-    R: ToLuaMulti<'lua>,
+    R: IntoLuaMulti<'lua>,
     F: 'static + Send + Fn(&'lua Lua, A) -> FR,
     FR: 'lua + Future<Output = Result<R>>,
 {

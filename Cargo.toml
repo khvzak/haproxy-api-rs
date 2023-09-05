@@ -13,7 +13,7 @@ HAProxy 2.x Lua API
 """
 
 [package.metadata.docs.rs]
-features = ["lua54", "vendored"]
+features = ["lua54"]
 
 [workspace]
 members = [
@@ -25,7 +25,6 @@ members = [
 [features]
 lua53 = ["mlua/lua53"]
 lua54 = ["mlua/lua54"]
-vendored = ["mlua/vendored"]
 
 [dependencies]
-mlua = { version = "0.8", features = ["async", "serialize"] }
+mlua = { version = "0.9", features = ["async", "serialize", "module"] }

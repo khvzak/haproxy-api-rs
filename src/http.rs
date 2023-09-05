@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 
-use mlua::{FromLua, Lua, Result, String as LuaString, Table, TableExt, TablePairs, ToLua, Value};
+use mlua::{
+    FromLua, IntoLua, Lua, Result, String as LuaString, Table, TableExt, TablePairs, Value,
+};
 
 /// The "Http" class contain all the HTTP manipulation functions.
 #[derive(Clone)]
@@ -24,13 +26,13 @@ impl<'lua> Http<'lua> {
 
     /// Appends an HTTP header field `name` with `value` in the request.
     #[inline]
-    pub fn req_add_header<V: ToLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
+    pub fn req_add_header<V: IntoLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
         self.0.call_method("req_add_header", (name, value))
     }
 
     /// Appends an HTTP header field `name` with `value` in the response.
     #[inline]
-    pub fn res_add_header<V: ToLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
+    pub fn res_add_header<V: IntoLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
         self.0.call_method("res_add_header", (name, value))
     }
 
@@ -48,13 +50,13 @@ impl<'lua> Http<'lua> {
 
     /// Replaces all occurrence of HTTP request header `name`, by only one containing the `value`.
     #[inline]
-    pub fn req_set_header<V: ToLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
+    pub fn req_set_header<V: IntoLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
         self.0.call_method("req_set_header", (name, value))
     }
 
     /// Replaces all occurrence of HTTP response header `name`, by only one containing the `value`.
     #[inline]
-    pub fn res_set_header<V: ToLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
+    pub fn res_set_header<V: IntoLua<'lua>>(&self, name: &str, value: V) -> Result<()> {
         self.0.call_method("res_set_header", (name, value))
     }
 
