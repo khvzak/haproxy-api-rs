@@ -7,11 +7,12 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["lua54"]
 lua54 = ["haproxy-api/lua54"]
 lua53 = ["haproxy-api/lua53"]
 
 [dependencies]
 haproxy-api = { path = "../.." }
 mlua = { version = "0.9", features = ["macros"] }
-async-std = "1.0"
+once_cell = "1.0"
+tokio = { version = "1.32", features = ["full"] }

@@ -1,15 +1,13 @@
 use haproxy_api::{Action, Core, ServiceMode, Txn};
 use mlua::prelude::*;
 
-#[mlua::lua_module]
+#[mlua::lua_module(skip_memory_check)]
 fn haproxy_simple_module(lua: &Lua) -> LuaResult<bool> {
     let core = Core::new(lua)?;
 
     // Reverse input string
     core.register_converters("rust_conv", |_lua, input: String| {
-        let mut input = input.as_bytes().to_owned();
-        input.reverse();
-        String::from_utf8(input).to_lua_err()
+        Ok(input.chars().rev().collect::<String>())
     })?;
 
     // Fetch first value of header `name`

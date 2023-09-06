@@ -11,7 +11,7 @@ struct BrotliFilter {
     options: BrotliFilterOptions,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, mlua::FromLua)]
 struct BrotliFilterOptions {
     quality: u8,
     window: u8,
@@ -150,7 +150,7 @@ impl BrotliFilter {
         }
 
         let mut options = BrotliFilterOptions::default();
-        for arg in args.clone().raw_sequence_values::<String>() {
+        for arg in args.clone().sequence_values::<String>() {
             match &*arg? {
                 "offload" => options.offload = true,
                 arg if arg.starts_with("type:") => {
@@ -229,7 +229,7 @@ impl UserFilter for BrotliFilter {
     }
 }
 
-#[mlua::lua_module]
+#[mlua::lua_module(skip_memory_check)]
 fn haproxy_brotli_filter(lua: &Lua) -> LuaResult<bool> {
     let core = Core::new(lua)?;
     core.register_filter::<BrotliFilter>("brotli")?;

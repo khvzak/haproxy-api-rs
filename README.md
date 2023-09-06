@@ -12,19 +12,19 @@ You can extend [HAProxy] on a safe and efficient way beyond Lua restrictions.
 
 Thanks to [mlua], asynchronous mode is also supported and every time when requested Future is in `Pending` state, `haproxy-api` conviniently executes `core.yield()` under the hood to return to the HAProxy scheduler.
 
-[async-std] is a recommended executor that can work without explicitly configured Runtime.
-Bear in mind that asynchronous mode is not too efficient because there is no way to integrate with HAProxy scheduler (current behaviour is more close to busy polling).
+Please check the [`async_serve_file`](examples/async_serve_file) example to see how to serve files asynchronously using Tokio.
+Bear in mind that asynchronous mode is not too efficient because there is no way to integrate with HAProxy scheduler (current behavior is more close to busy polling).
 
 [HAProxy]: http://www.haproxy.org/
-[Lua API]: http://www.arpalert.org/src/haproxy-lua-api/2.2/index.html
+[Lua API]: http://www.arpalert.org/src/haproxy-lua-api/2.6/index.html
 [mlua]: https://github.com/khvzak/mlua
-[async-std]: https://github.com/async-rs/async-std
 
 ## Usage
 
 Please check our [examples](examples):
-* [simple](examples/simple)
-* [async serve file](examples/async_serve_file)
+* [async serve file](examples/async_serve_file) - How to serve files asynchronously
+* [brotli](examples/brotli) - How to add brotli compression to HAProxy using filters API
+* [simple](examples/simple) - How to register fetches and converters
 
 ## Restrictions
 
