@@ -1,6 +1,6 @@
 [package]
 name = "haproxy-api"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
 edition = "2021"
 repository = "https://github.com/khvzak/haproxy-api-rs"

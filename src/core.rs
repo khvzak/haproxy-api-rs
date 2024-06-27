@@ -440,8 +440,23 @@ impl<'lua> YieldFixUp<'lua> {
     fn new(lua: &'lua Lua) -> Result<Self> {
         let coroutine: Table = lua.globals().get("coroutine")?;
         let orig_yield: Function = coroutine.get("yield")?;
-        let core: Table = lua.globals().get("core")?;
-        coroutine.set("yield", core.get::<_, Function>("yield")?)?;
+        let new_yield: Function = lua
+            .load(
+                r#"
+                local yield, msleep = core.yield, core.msleep
+                local i = 0
+                return function()
+                    if i == 0 then
+                        i = 1
+                        yield()
+                    else
+                        msleep(1)
+                    end
+                end
+                "#,
+            )
+            .call(())?;
+        coroutine.set("yield", new_yield)?;
         Ok(YieldFixUp(lua, orig_yield))
     }
 }
