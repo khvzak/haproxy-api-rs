@@ -204,7 +204,7 @@ impl<'lua> Core<'lua> {
     where
         A: FromLuaMulti<'lua>,
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
-        FR: Future<Output = Result<()>> + 'static,
+        FR: Future<Output = Result<()>> + 'lua,
     {
         let func = create_async_function(self.lua, func)?;
         self.class
@@ -243,12 +243,13 @@ impl<'lua> Core<'lua> {
     }
 
     /// Registers an asynchronous function executed as a converter.
+    #[deprecated(note = "haproxy does not support async converters")]
     pub fn register_async_converters<A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'lua>,
         R: IntoLua<'lua>,
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
-        FR: Future<Output = Result<R>> + 'static,
+        FR: Future<Output = Result<R>> + 'lua,
     {
         let func = create_async_function(self.lua, func)?;
         self.class
@@ -280,12 +281,13 @@ impl<'lua> Core<'lua> {
     }
 
     /// Registers an asynchronous function executed as sample fetch.
+    #[deprecated(note = "haproxy does not support async fetches")]
     pub fn register_async_fetches<A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
     where
         A: FromLuaMulti<'lua>,
         R: IntoLua<'lua>,
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
-        FR: Future<Output = Result<R>> + 'static,
+        FR: Future<Output = Result<R>> + 'lua,
     {
         let func = create_async_function(self.lua, func)?;
         self.class.call_function("register_fetches", (name, func))
@@ -353,7 +355,7 @@ impl<'lua> Core<'lua> {
     pub fn register_async_task<F, FR>(&self, func: F) -> Result<()>
     where
         F: Fn(&'lua Lua) -> FR + Send + 'static,
-        FR: Future<Output = Result<()>> + 'static,
+        FR: Future<Output = Result<()>> + 'lua,
     {
         let func = create_async_function(self.lua, move |lua, ()| func(lua))?;
         self.class.call_function("register_task", func)
