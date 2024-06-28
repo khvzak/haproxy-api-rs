@@ -21,10 +21,7 @@ impl<'lua> Converters<'lua> {
     where
         A: IntoLuaMulti<'lua>,
     {
-        Ok(match self.0.call_method(name, args)? {
-            Some(val) => val,
-            None => String::new(),
-        })
+        Ok((self.0.call_method::<_, Option<_>>(name, args)?).unwrap_or_default())
     }
 }
 
