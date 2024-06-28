@@ -206,8 +206,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<()>> + 'static,
     {
-        let _yield_fixup = YieldFixUp::new(self.lua)?;
-        let func = self.lua.create_async_function(func)?;
+        let func = create_async_function(self.lua, func)?;
         self.class
             .call_function("register_action", (name, actions.to_vec(), func, nb_args))
     }
@@ -251,8 +250,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<R>> + 'static,
     {
-        let _yield_fixup = YieldFixUp::new(self.lua)?;
-        let func = self.lua.create_async_function(func)?;
+        let func = create_async_function(self.lua, func)?;
         self.class
             .call_function("register_converters", (name, func))
     }
@@ -289,8 +287,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'lua Lua, A) -> FR + Send + 'static,
         FR: Future<Output = Result<R>> + 'static,
     {
-        let _yield_fixup = YieldFixUp::new(self.lua)?;
-        let func = self.lua.create_async_function(func)?;
+        let func = create_async_function(self.lua, func)?;
         self.class.call_function("register_fetches", (name, func))
     }
 
@@ -358,8 +355,7 @@ impl<'lua> Core<'lua> {
         F: Fn(&'lua Lua) -> FR + Send + 'static,
         FR: Future<Output = Result<()>> + 'static,
     {
-        let _yield_fixup = YieldFixUp::new(self.lua)?;
-        let func = self.lua.create_async_function(move |lua, ()| func(lua))?;
+        let func = create_async_function(self.lua, move |lua, ()| func(lua))?;
         self.class.call_function("register_task", func)
     }
 
