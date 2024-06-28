@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use tokio::{fs, runtime};
 
 static TOKIO: Lazy<runtime::Runtime> = Lazy::new(|| {
-    runtime::Builder::new_current_thread()
+    runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("cannot start tokio runtime")
