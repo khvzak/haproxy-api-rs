@@ -1,25 +1,17 @@
+use bstr::BString;
 use haproxy_api::{Core, ServiceMode};
 use mlua::prelude::*;
-use once_cell::sync::Lazy;
-use tokio::{fs, runtime};
-
-static TOKIO: Lazy<runtime::Runtime> = Lazy::new(|| {
-    runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("cannot start tokio runtime")
-});
+use tokio::fs;
 
 #[mlua::lua_module(skip_memory_check)]
 fn haproxy_async_module(lua: &Lua) -> LuaResult<bool> {
     let core = Core::new(lua)?;
 
     // It's important to use `create_async_function` from the haproxy_api
-    let get_file = haproxy_api::create_async_function(lua, |lua, path: String| async move {
-        let _guard = TOKIO.enter();
+    let get_file = haproxy_api::create_async_function(lua, |path: String| async move {
         match fs::read(&path).await {
-            Ok(content) => Ok((Some(lua.create_string(&content)?), None)),
-            Err(err) => Ok((None, Some(lua.create_string(&err.to_string())?))),
+            Ok(content) => Ok((Some(BString::from(content)), None)),
+            Err(err) => Ok((None, Some(err.to_string()))),
         }
     })?;
 

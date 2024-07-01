@@ -1,9 +1,24 @@
 use std::collections::HashMap;
-use std::future::Future;
 
 use mlua::{
-    AnyUserData, AsChunk, ExternalError, FromLuaMulti, Function, IntoLua, IntoLuaMulti, Lua,
-    Result, Table, TableExt, Value,
+    AnyUserData, AsChunk, ExternalError, FromLuaMulti, IntoLua, Lua, Result, Table, TableExt, Value,
+};
+
+#[cfg(feature = "async")]
+use {
+    futures_util::future::Either,
+    mlua::{ExternalResult, Function, IntoLuaMulti, RegistryKey},
+    rustc_hash::{FxBuildHasher, FxHashMap},
+    std::future::{self, Future},
+    std::ops::Deref,
+    std::pin::Pin,
+    std::sync::atomic::{AtomicU32, Ordering},
+    std::sync::OnceLock,
+    std::task::{Context, Poll},
+    tokio::io::AsyncWriteExt,
+    tokio::net::TcpListener,
+    tokio::runtime,
+    tokio::sync::{mpsc, oneshot},
 };
 
 use crate::filter::UserFilterWrapper;
@@ -193,24 +208,6 @@ impl<'lua> Core<'lua> {
             .call_function("register_action", (name, actions, func, nb_args))
     }
 
-    /// Registers an asynchronous function executed as an action.
-    pub fn register_async_action<A, F, FR>(
-        &self,
-        name: &str,
-        actions: &[&str],
-        nb_args: usize,
-        func: F,
-    ) -> Result<()>
-    where
-        A: FromLuaMulti<'lua>,
-        F: Fn(&'lua Lua, A) -> FR + Send + 'static,
-        FR: Future<Output = Result<()>> + 'lua,
-    {
-        let func = create_async_function(self.lua, func)?;
-        self.class
-            .call_function("register_action", (name, actions.to_vec(), func, nb_args))
-    }
-
     /// Same as [`register_action`] but using Lua function.
     ///
     /// [`register_action`]: #method.register_action
@@ -242,20 +239,6 @@ impl<'lua> Core<'lua> {
             .call_function("register_converters", (name, func))
     }
 
-    /// Registers an asynchronous function executed as a converter.
-    #[deprecated(note = "haproxy does not support async converters")]
-    pub fn register_async_converters<A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
-    where
-        A: FromLuaMulti<'lua>,
-        R: IntoLua<'lua>,
-        F: Fn(&'lua Lua, A) -> FR + Send + 'static,
-        FR: Future<Output = Result<R>> + 'lua,
-    {
-        let func = create_async_function(self.lua, func)?;
-        self.class
-            .call_function("register_converters", (name, func))
-    }
-
     /// Same as [`register_converters`] but using Lua function.
     ///
     /// [`register_converters`]: #method.register_converters
@@ -277,19 +260,6 @@ impl<'lua> Core<'lua> {
         F: Fn(&'lua Lua, A) -> Result<R> + Send + 'static,
     {
         let func = self.lua.create_function(func)?;
-        self.class.call_function("register_fetches", (name, func))
-    }
-
-    /// Registers an asynchronous function executed as sample fetch.
-    #[deprecated(note = "haproxy does not support async fetches")]
-    pub fn register_async_fetches<A, R, F, FR>(&self, name: &str, func: F) -> Result<()>
-    where
-        A: FromLuaMulti<'lua>,
-        R: IntoLua<'lua>,
-        F: Fn(&'lua Lua, A) -> FR + Send + 'static,
-        FR: Future<Output = Result<R>> + 'lua,
-    {
-        let func = create_async_function(self.lua, func)?;
         self.class.call_function("register_fetches", (name, func))
     }
 
@@ -352,12 +322,13 @@ impl<'lua> Core<'lua> {
     }
 
     /// Registers and start an independent asynchronous task.
+    #[cfg(feature = "async")]
     pub fn register_async_task<F, FR>(&self, func: F) -> Result<()>
     where
-        F: Fn(&'lua Lua) -> FR + Send + 'static,
-        FR: Future<Output = Result<()>> + 'lua,
+        F: Fn() -> FR + 'static,
+        FR: Future<Output = Result<()>> + Send + 'static,
     {
-        let func = create_async_function(self.lua, move |lua, ()| func(lua))?;
+        let func = create_async_function(self.lua, move |()| func())?;
         self.class.call_function("register_task", func)
     }
 
@@ -421,19 +392,208 @@ impl<'lua> IntoLua<'lua> for LogLevel {
     }
 }
 
-pub fn create_async_function<'lua, A, R, F, FR>(lua: &'lua Lua, func: F) -> Result<Function<'lua>>
-where
-    A: FromLuaMulti<'lua>,
-    R: IntoLuaMulti<'lua>,
-    F: 'static + Send + Fn(&'lua Lua, A) -> FR,
-    FR: 'lua + Future<Output = Result<R>>,
-{
-    let _yield_fixup = YieldFixUp::new(lua)?;
-    lua.create_async_function(func)
+#[cfg(feature = "async")]
+type FutureId = u32;
+
+#[cfg(feature = "async")]
+#[derive(Clone, Debug)]
+struct FutureNotifier(mpsc::Sender<FutureId>);
+
+#[cfg(feature = "async")]
+impl Deref for FutureNotifier {
+    type Target = mpsc::Sender<FutureId>;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
+// Max size of the pool of channels
+#[cfg(feature = "async")]
+const POOL_MAX_SIZE: usize = 512;
+
+// Pool of channels
+#[cfg(feature = "async")]
+struct Pool(Vec<RegistryKey>);
+
+#[cfg(feature = "async")]
+struct FutureChannelMap(FxHashMap<FutureId, RegistryKey>);
+
+// Future id generator
+#[cfg(feature = "async")]
+static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+
+#[cfg(feature = "async")]
+fn runtime() -> &'static runtime::Runtime {
+    static RUNTIME: OnceLock<runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create tokio runtime")
+    })
+}
+
+// Starts a tokio runtime and spawns a background task to receive "ready "notifications
+// from futures and re-send them to the socket
+#[cfg(feature = "async")]
+fn get_or_init_notifier(lua: &Lua) -> FutureNotifier {
+    if let Some(sender) = lua.app_data_ref::<FutureNotifier>() {
+        return sender.clone();
+    }
+
+    let (port_tx, port_rx) = oneshot::channel::<u16>();
+    // Spawn notification task (it sends data received from a future via channel to the socket)
+    let (tx, mut rx) = mpsc::channel::<FutureId>(1024);
+    runtime().spawn(async move {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("failed to bind to a port");
+        let port = listener
+            .local_addr()
+            .expect("failed to get local address")
+            .port();
+        port_tx.send(port).expect("failed to send port information");
+
+        while let Ok((mut stream, _)) = listener.accept().await {
+            while let Some(future_id) = rx.recv().await {
+                // Send the future id to the socket
+                // When haproxy receive it, it will find an associated coroutine and wake it up
+                if (stream.write_all(format!("{future_id}\n").as_bytes()).await).is_err() {
+                    // If the socket is closed, wait for a new connection
+                    break;
+                }
+            }
+        }
+    });
+
+    // Wait for the port to be bound
+    let port = port_rx
+        .blocking_recv()
+        .expect("failed to receive port information");
+
+    // Start haproxy task on this worker thread to receive notifications
+    // send over the socket (see above)
+    (|| -> Result<()> {
+        let future_wake_up = lua.create_function(|lua, future_id: Value| {
+            if let Ok(future_id) = lua.unpack::<FutureId>(future_id) {
+                let future2channel = lua.app_data_ref::<FutureChannelMap>().unwrap();
+                if let Some(channel_key) = future2channel.0.get(&future_id) {
+                    lua.registry_value::<Table>(channel_key)?
+                        .call_method::<_, ()>("push", true)?;
+                }
+            }
+            Ok(())
+        })?;
+
+        lua.load(
+            r#"
+            local port, future_wake_up = ...
+            core.register_task(function()
+                while true do
+                    local socket = core.tcp()
+                    local ok = socket:connect("127.0.0.1", port)
+                    if not ok then
+                        core.Alert("Failed to connect to the notification socket")
+                        return
+                    end
+                    while true do
+                        local future_id = socket:receive("*l")
+                        future_wake_up(future_id)
+                    end
+                end
+            end)
+        "#,
+        )
+        .call::<_, ()>((port, future_wake_up))
+    })()
+    .expect("failed to register a worker task");
+
+    let notifier = FutureNotifier(tx);
+    lua.set_app_data(notifier.clone());
+    notifier
+}
+
+/// Creates a new async function that can be used in HAProxy configuration.
+///
+/// Tokio runtime is automatically configured to use multiple threads.
+#[cfg(feature = "async")]
+pub fn create_async_function<'lua, A, R, F, FR>(lua: &'lua Lua, func: F) -> Result<Function<'lua>>
+where
+    A: FromLuaMulti<'lua> + 'static,
+    R: IntoLuaMulti<'lua> + Send + 'static,
+    F: Fn(A) -> FR + 'static,
+    FR: Future<Output = Result<R>> + Send + 'static,
+{
+    let _yield_fixup = YieldFixUp::new(lua)?;
+    lua.create_async_function(move |lua, args| {
+        let notifier = get_or_init_notifier(lua);
+        let (future_id, channel) = (|| -> Result<_> {
+            // Try to get a channel from the pool or create a new one
+            let channel_key = {
+                let mut pool = match lua.app_data_mut::<Pool>() {
+                    Some(pool) => pool,
+                    None => {
+                        lua.set_app_data(Pool(Vec::with_capacity(64)));
+                        lua.app_data_mut().unwrap()
+                    }
+                };
+                match pool.0.pop() {
+                    Some(q) => q,
+                    None => {
+                        drop(pool);
+                        let globals = lua.globals();
+                        let core: Table = globals.raw_get("core")?;
+                        core.call_function::<_, Table>("queue", ())
+                            .and_then(|v| lua.create_registry_value(v))?
+                    }
+                }
+            };
+
+            let future_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let channel: Table = lua.registry_value(&channel_key)?;
+            let mut future2channel = match lua.app_data_mut::<FutureChannelMap>() {
+                Some(map) => map,
+                None => {
+                    let map =
+                        FutureChannelMap(HashMap::with_capacity_and_hasher(64, FxBuildHasher));
+                    lua.set_app_data(map);
+                    lua.app_data_mut().unwrap()
+                }
+            };
+            future2channel.0.insert(future_id, channel_key);
+
+            Ok((future_id, channel))
+        })()
+        .expect("failed to generate future id");
+
+        // Spawn the future
+        let _guard = runtime().enter();
+        let args = match A::from_lua_multi(args, lua) {
+            Ok(args) => args,
+            Err(err) => return Either::Left(future::ready(Err(err))),
+        };
+        let fut = func(args);
+        let result = tokio::task::spawn(async move {
+            let result = fut.await;
+            let _ = notifier.send(future_id).await;
+            result
+        });
+
+        Either::Right(HaproxyFuture {
+            lua,
+            channel,
+            id: future_id,
+            fut: async move { result.await.into_lua_err()? },
+        })
+    })
+}
+
+#[cfg(feature = "async")]
 struct YieldFixUp<'lua>(&'lua Lua, Function<'lua>);
 
+#[cfg(feature = "async")]
 impl<'lua> YieldFixUp<'lua> {
     fn new(lua: &'lua Lua) -> Result<Self> {
         let coroutine: Table = lua.globals().get("coroutine")?;
@@ -441,24 +601,21 @@ impl<'lua> YieldFixUp<'lua> {
         let new_yield: Function = lua
             .load(
                 r#"
-                local yield, msleep = core.yield, core.msleep
-                local i = 0
-                return function()
-                    if i == 0 then
-                        i = 1
-                        yield()
-                    else
-                        msleep(1)
-                    end
+                local active_channel = __HAPROXY_ACTIVE_CHANNEL
+                if active_channel ~= nil then
+                    active_channel:pop_wait()
+                else
+                    core.msleep(1)
                 end
-                "#,
+            "#,
             )
-            .call(())?;
+            .into_function()?;
         coroutine.set("yield", new_yield)?;
         Ok(YieldFixUp(lua, orig_yield))
     }
 }
 
+#[cfg(feature = "async")]
 impl<'lua> Drop for YieldFixUp<'lua> {
     fn drop(&mut self) {
         if let Err(e) = (|| {
@@ -466,6 +623,48 @@ impl<'lua> Drop for YieldFixUp<'lua> {
             coroutine.set("yield", self.1.clone())
         })() {
             println!("Error in YieldFixUp destructor: {}", e);
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+pin_project_lite::pin_project! {
+    struct HaproxyFuture<'lua, F> {
+        lua: &'lua Lua,
+        channel: Table<'lua>,
+        id: FutureId,
+        #[pin]
+        fut: F,
+    }
+}
+
+#[cfg(feature = "async")]
+impl<F, R> Future for HaproxyFuture<'_, F>
+where
+    F: Future<Output = Result<R>>,
+{
+    type Output = Result<R>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        match this.fut.poll(cx) {
+            Poll::Ready(res) => {
+                // Release channel to the pool
+                let mut pool = this.lua.app_data_mut::<Pool>().unwrap();
+                let mut future2channel = this.lua.app_data_mut::<FutureChannelMap>().unwrap();
+                if let Some(chan) = future2channel.0.remove(this.id) {
+                    if pool.0.len() < POOL_MAX_SIZE {
+                        pool.0.push(chan);
+                    }
+                }
+
+                Poll::Ready(res)
+            }
+            Poll::Pending => {
+                // Set the active queue so the mlua async helper will be able to wait on it
+                let _ = (this.lua.globals()).raw_set("__HAPROXY_ACTIVE_CHANNEL", &*this.channel);
+                Poll::Pending
+            }
         }
     }
 }
