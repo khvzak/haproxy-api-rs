@@ -29,7 +29,7 @@ lua53 = ["mlua/lua53"]
 lua54 = ["mlua/lua54"]
 
 [dependencies]
-mlua = { version = "0.9.3", features = ["serialize", "module"] }
+mlua = { version = "0.9.9", features = ["serialize", "module"] }
 tokio = { version = "1.0", features = ["net", "io-util", "sync", "rt-multi-thread"], optional = true }
 pin-project-lite = { version = "0.2", optional = true }
 futures-util = { version = "0.3", optional = true }
