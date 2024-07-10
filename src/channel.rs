@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use mlua::{FromLua, IntoLua, Lua, Result, String as LuaString, Table, TableExt, Value};
 
 /// The "Channel" class contains all functions to manipulate channels.
@@ -21,7 +23,11 @@ impl<'lua> Channel<'lua> {
     /// Returns `length` bytes of incoming data from the channel buffer, starting at the `offset`.
     /// The data are not removed from the buffer.
     #[inline]
-    pub fn data(&self, offset: Option<isize>, length: Option<isize>) -> Result<Option<LuaString>> {
+    pub fn data(
+        &self,
+        offset: Option<isize>,
+        length: Option<isize>,
+    ) -> Result<Option<LuaString<'lua>>> {
         let offset = offset.unwrap_or(0);
         match length {
             Some(length) => self.class.call_method("data", (offset, length)),
@@ -71,7 +77,11 @@ impl<'lua> Channel<'lua> {
     ///
     /// The data are not removed from the buffer. If no line is found, all data are returned.
     #[inline]
-    pub fn line(&self, offset: Option<isize>, length: Option<isize>) -> Result<Option<LuaString>> {
+    pub fn line(
+        &self,
+        offset: Option<isize>,
+        length: Option<isize>,
+    ) -> Result<Option<LuaString<'lua>>> {
         let offset = offset.unwrap_or(0);
         match length {
             Some(length) => self.class.call_method("line", (offset, length)),
@@ -148,5 +158,14 @@ impl<'lua> IntoLua<'lua> for Channel<'lua> {
     #[inline]
     fn into_lua(self, _: &'lua Lua) -> Result<Value<'lua>> {
         Ok(Value::Table(self.class))
+    }
+}
+
+impl<'lua> Deref for Channel<'lua> {
+    type Target = Table<'lua>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.class
     }
 }

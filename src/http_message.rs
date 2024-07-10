@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use mlua::{FromLua, Lua, Result, String as LuaString, Table, TableExt, Value};
 
 use crate::{Channel, Headers};
@@ -29,7 +31,11 @@ impl<'lua> HttpMessage<'lua> {
     /// Returns `length` bytes of incoming data from the HTTP message, starting at the `offset`.
     /// The data are not removed from the buffer.
     #[inline]
-    pub fn body(&self, offset: Option<isize>, length: Option<isize>) -> Result<Option<LuaString>> {
+    pub fn body(
+        &self,
+        offset: Option<isize>,
+        length: Option<isize>,
+    ) -> Result<Option<LuaString<'lua>>> {
         let offset = offset.unwrap_or(0);
         match length {
             Some(length) => self.class.call_method("body", (offset, length)),
@@ -39,7 +45,7 @@ impl<'lua> HttpMessage<'lua> {
 
     /// Returns a corresponding channel attached to the HTTP message.
     #[inline]
-    pub fn channel(&self) -> Result<Channel> {
+    pub fn channel(&self) -> Result<Channel<'lua>> {
         self.class.raw_get("channel")
     }
 
@@ -57,13 +63,13 @@ impl<'lua> HttpMessage<'lua> {
 
     /// Returns a table containing all the headers of the HTTP message.
     #[inline]
-    pub fn get_headers(&self) -> Result<Headers> {
+    pub fn get_headers(&self) -> Result<Headers<'lua>> {
         self.class.call_method("get_headers", ())
     }
 
     /// Returns a table containing the start-line of the HTTP message.
     #[inline]
-    pub fn get_stline(&self) -> Result<Table> {
+    pub fn get_stline(&self) -> Result<Table<'lua>> {
         self.class.call_method("get_stline", ())
     }
 
@@ -237,5 +243,14 @@ impl<'lua> FromLua<'lua> for HttpMessage<'lua> {
     fn from_lua(value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
         let class = Table::from_lua(value, lua)?;
         Ok(HttpMessage { lua, class })
+    }
+}
+
+impl<'lua> Deref for HttpMessage<'lua> {
+    type Target = Table<'lua>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.class
     }
 }

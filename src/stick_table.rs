@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use mlua::{FromLua, Lua, Result, Table, TableExt, Value};
 
 /// The "StickTable" class can be used to access the HAProxy stick tables.
@@ -35,5 +37,14 @@ impl<'lua> FromLua<'lua> for StickTable<'lua> {
     fn from_lua(value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
         let class = Table::from_lua(value, lua)?;
         Ok(StickTable { class })
+    }
+}
+
+impl<'lua> Deref for StickTable<'lua> {
+    type Target = Table<'lua>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.class
     }
 }

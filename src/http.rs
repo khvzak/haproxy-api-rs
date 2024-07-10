@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 use mlua::{
     FromLua, IntoLua, Lua, Result, String as LuaString, Table, TableExt, TablePairs, Value,
@@ -111,6 +112,22 @@ impl<'lua> Http<'lua> {
     }
 }
 
+impl<'lua> Deref for Http<'lua> {
+    type Target = Table<'lua>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'lua> FromLua<'lua> for Http<'lua> {
+    #[inline]
+    fn from_lua(value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
+        Ok(Http(Table::from_lua(value, lua)?))
+    }
+}
+
 impl<'lua> Headers<'lua> {
     #[inline]
     pub fn pairs<V: FromLua<'lua>>(self) -> HeaderPairs<'lua, V> {
@@ -144,10 +161,12 @@ impl<'lua> Headers<'lua> {
     }
 }
 
-impl<'lua> FromLua<'lua> for Http<'lua> {
+impl<'lua> Deref for Headers<'lua> {
+    type Target = Table<'lua>;
+
     #[inline]
-    fn from_lua(value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
-        Ok(Http(Table::from_lua(value, lua)?))
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

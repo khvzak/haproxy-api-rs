@@ -1,8 +1,7 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 
-use mlua::{
-    AnyUserData, AsChunk, ExternalError, FromLuaMulti, IntoLua, Lua, Result, Table, TableExt, Value,
-};
+use mlua::{AnyUserData, AsChunk, FromLuaMulti, IntoLua, Lua, Result, Table, TableExt, Value};
 
 #[cfg(feature = "async")]
 use {
@@ -10,7 +9,6 @@ use {
     mlua::{ExternalResult, Function, IntoLuaMulti, RegistryKey},
     rustc_hash::{FxBuildHasher, FxHashMap},
     std::future::{self, Future},
-    std::ops::Deref,
     std::pin::Pin,
     std::sync::atomic::{AtomicU32, Ordering},
     std::sync::OnceLock,
@@ -145,39 +143,6 @@ impl<'lua> Core<'lua> {
             sec: time.get("sec")?,
             usec: time.get("usec")?,
         })
-    }
-
-    /// Takes a string representing http date, and returns an integer containing the corresponding date
-    ///  with a epoch format.
-    /// A valid http date me respect the format IMF, RFC850 or ASCTIME.
-    #[inline]
-    pub fn http_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.class.call_function("http_date", date)?;
-        date.ok_or_else(|| "invalid date".into_lua_err())
-    }
-
-    /// Take a string representing IMF date, and returns an integer containing the corresponding date
-    /// with a epoch format.
-    #[inline]
-    pub fn imf_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.class.call_function("imf_date", date)?;
-        date.ok_or_else(|| "invalid date".into_lua_err())
-    }
-
-    /// Takess a string representing RFC850 date, and returns an integer containing the corresponding date
-    /// with a epoch format.
-    #[inline]
-    pub fn rfc850_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.class.call_function("rfc850_date", date)?;
-        date.ok_or_else(|| "invalid date".into_lua_err())
-    }
-
-    /// Takes a string representing ASCTIME date, and returns an integer containing the corresponding date
-    /// with a epoch format.
-    #[inline]
-    pub fn asctime_date(&self, date: &str) -> Result<u64> {
-        let date: Option<u64> = self.class.call_function("asctime_date", date)?;
-        date.ok_or_else(|| "invalid date".into_lua_err())
     }
 
     /// Registers a function executed as an action.
@@ -372,7 +337,22 @@ impl<'lua> Core<'lua> {
         self.class.call_function("match_addr", (addr1, addr2))
     }
 
-    // SKIP: concat/done/yield/tokenize/etc
+    pub fn event_sub<'a, S>(&self, event_types: &[&str], code: S) -> Result<()>
+    where
+        S: AsChunk<'lua, 'a>,
+    {
+        let func = self.lua.load(code).into_function()?;
+        self.class.call_function("event_sub", (event_types, func))
+    }
+}
+
+impl<'lua> Deref for Core<'lua> {
+    type Target = Table<'lua>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.class
+    }
 }
 
 impl<'lua> IntoLua<'lua> for LogLevel {

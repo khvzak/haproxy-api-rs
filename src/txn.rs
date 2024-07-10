@@ -1,6 +1,8 @@
+use std::ops::Deref;
+
 use mlua::{FromLua, IntoLua, Lua, Result, Table, TableExt, Value};
 
-use crate::{Converters, Fetches, Http, LogLevel};
+use crate::{Converters, Fetches, Http, HttpMessage, LogLevel};
 
 /// The txn class contain all the functions relative to the http or tcp transaction.
 #[derive(Clone)]
@@ -16,6 +18,16 @@ impl<'lua> Txn<'lua> {
     #[inline]
     pub fn http(&self) -> Result<Http<'lua>> {
         self.class.get("http")
+    }
+
+    /// Returns the request HTTPMessage object.
+    pub fn http_req(&self) -> Result<HttpMessage<'lua>> {
+        self.class.get("http_req")
+    }
+
+    /// Returns the response HTTPMessage object.
+    pub fn http_res(&self) -> Result<HttpMessage<'lua>> {
+        self.class.get("http_res")
     }
 
     /// Sends a log on the default syslog server if it is configured and on the stderr if it is allowed.
@@ -55,8 +67,8 @@ impl<'lua> Txn<'lua> {
 
     /// Store variable `name` in an HAProxy converting the type.
     #[inline]
-    pub fn set_var<A: IntoLua<'lua>>(&self, name: &str, val: A) -> Result<()> {
-        self.class.call_method("set_var", (name, val))
+    pub fn set_var<A: IntoLua<'lua>>(&self, name: &str, val: A, if_exist: bool) -> Result<()> {
+        self.class.call_method("set_var", (name, val, if_exist))
     }
 
     /// Unsets the variable `name`.
@@ -71,11 +83,6 @@ impl<'lua> Txn<'lua> {
     pub fn set_loglevel(&self, level: LogLevel) -> Result<()> {
         self.class.call_method("set_loglevel", level)
     }
-
-    // TODO: set_tos
-    // TODO: set_mark
-    // TODO: set_priority_class
-    // TODO: set_priority_offset
 }
 
 impl<'lua> FromLua<'lua> for Txn<'lua> {
@@ -88,5 +95,14 @@ impl<'lua> FromLua<'lua> for Txn<'lua> {
             class,
             r#priv: Value::Nil,
         })
+    }
+}
+
+impl<'lua> Deref for Txn<'lua> {
+    type Target = Table<'lua>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.class
     }
 }

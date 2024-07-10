@@ -103,6 +103,13 @@ pub trait UserFilter: Sized {
         filter.call_function("unregister_data_filter", (txn.r#priv, chn))?;
         Ok(())
     }
+
+    /// Set the pause timeout to the specified time, defined in milliseconds.
+    fn wake_time(lua: &Lua, milliseconds: u64) -> Result<()> {
+        let filter = lua.globals().raw_get::<_, Table>("filter")?;
+        filter.call_function("wake_time", milliseconds)?;
+        Ok(())
+    }
 }
 
 pub(crate) struct UserFilterWrapper<T>(T);
@@ -113,7 +120,7 @@ where
 {
     pub(crate) fn make_class(lua: &Lua) -> Result<Table> {
         let class = lua.create_table()?;
-        class.raw_set("__index", class.clone())?;
+        class.raw_set("__index", &class)?;
 
         // Attributes
         class.raw_set("id", type_name::<T>())?;
@@ -122,7 +129,7 @@ where
         //
         // Methods
         //
-        let class_key = lua.create_registry_value(class.clone())?;
+        let class_key = lua.create_registry_value(&class)?;
         class.raw_set(
             "new",
             lua.create_function(move |lua, class: Table| {
