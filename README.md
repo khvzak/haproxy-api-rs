@@ -6,18 +6,22 @@
 [API Documentation]: https://docs.rs/haproxy-api/badge.svg
 [docs.rs]: https://docs.rs/haproxy-api
 
-`haproxy-api` exposes [HAProxy] 2.x [Lua API] to use from Rust.
+`haproxy-api` exposes [HAProxy] 2.8+ [Lua API] to use from Rust.
 In conjunction with [mlua] it allows to run Rust code in HAProxy as a Task/Converter/Fetcher/Service/etc.
 You can extend [HAProxy] on a safe and efficient way beyond Lua restrictions.
 
-Thanks to [mlua], asynchronous mode is also supported and every time when requested Future is in `Pending` state, `haproxy-api` conviniently executes `core.yield()` under the hood to return to the HAProxy scheduler.
+## Async support
 
-Please check the [`async_serve_file`](examples/async_serve_file) example to see how to serve files asynchronously using Tokio.
-Bear in mind that asynchronous mode is not too efficient because there is no way to integrate with HAProxy scheduler (current behavior is more close to busy polling).
+Asynchronous mode is supported using [Tokio] runtime. The HAProxy runtime is fully integrated with [Tokio] runtime using HAProxy queueing system and auxiliary tcp listener for async tasks readiness notifications.
+
+A multi-threaded tokio runtime is automatically started when the first async function is executed.
+
+Please check the [async_serve_file](examples/async_serve_file) example to see how to serve files asynchronously.
 
 [HAProxy]: http://www.haproxy.org/
 [Lua API]: http://www.arpalert.org/src/haproxy-lua-api/2.6/index.html
 [mlua]: https://github.com/khvzak/mlua
+[Tokio]: https://tokio.rs/
 
 ## Usage
 
