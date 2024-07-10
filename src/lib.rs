@@ -35,4 +35,4 @@ pub use crate::stick_table::StickTable;
 pub use crate::txn::Txn;
 
 #[cfg(feature = "async")]
-pub use crate::r#async::create_async_function;
+pub use crate::r#async::{create_async_function, runtime};

@@ -43,7 +43,8 @@ struct FutureChannelMap(FxHashMap<FutureId, RegistryKey>);
 // Future id generator
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
-fn runtime() -> &'static runtime::Runtime {
+/// Returns the global tokio runtime.
+pub fn runtime() -> &'static runtime::Runtime {
     static RUNTIME: OnceLock<runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         runtime::Builder::new_multi_thread()
