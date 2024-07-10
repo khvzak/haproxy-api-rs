@@ -7,6 +7,8 @@
 //! [Lua API]: http://www.arpalert.org/src/haproxy-lua-api/2.2/index.html
 //! [mlua]: https://crates.io/crates/mlua
 
+#[cfg(feature = "async")]
+mod r#async;
 mod channel;
 mod converters;
 mod core;
@@ -33,4 +35,4 @@ pub use crate::stick_table::StickTable;
 pub use crate::txn::Txn;
 
 #[cfg(feature = "async")]
-pub use crate::core::create_async_function;
+pub use crate::r#async::create_async_function;
