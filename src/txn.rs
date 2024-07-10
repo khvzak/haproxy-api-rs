@@ -67,8 +67,14 @@ impl<'lua> Txn<'lua> {
 
     /// Store variable `name` in an HAProxy converting the type.
     #[inline]
-    pub fn set_var<A: IntoLua<'lua>>(&self, name: &str, val: A, if_exist: bool) -> Result<()> {
-        self.class.call_method("set_var", (name, val, if_exist))
+    pub fn set_var<A: IntoLua<'lua>>(&self, name: &str, val: A) -> Result<()> {
+        self.class.call_method("set_var", (name, val))
+    }
+
+    /// Store variable `name` in an HAProxy if the variable already exists.
+    #[inline]
+    pub fn set_var_if_exists<A: IntoLua<'lua>>(&self, name: &str, val: A) -> Result<()> {
+        self.class.call_method("set_var", (name, val, true))
     }
 
     /// Unsets the variable `name`.
