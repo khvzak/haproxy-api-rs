@@ -24,7 +24,7 @@ members = [
 
 [features]
 default = ["async", "lua54"]
-async = ["mlua/async", "dep:tokio", "dep:pin-project-lite", "dep:futures-util", "dep:rustc-hash"]
+async = ["mlua/async", "dep:tokio", "dep:pin-project-lite", "dep:futures-util", "dep:rustc-hash", "dep:dashmap"]
 lua53 = ["mlua/lua53"]
 lua54 = ["mlua/lua54"]
 
@@ -34,3 +34,4 @@ tokio = { version = "1.0", features = ["net", "io-util", "sync", "rt-multi-threa
 pin-project-lite = { version = "0.2", optional = true }
 futures-util = { version = "0.3", optional = true }
 rustc-hash = { version = "2.0", optional = true }
+dashmap = { version = "6.0", optional = true }

@@ -1,47 +1,30 @@
-use std::collections::HashMap;
 use std::future::{self, Future};
-use std::ops::Deref;
+use std::net::TcpListener as StdTcpListener;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
 use std::task::{Context, Poll};
-use tokio::io::AsyncWriteExt;
+
+use dashmap::DashMap;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::runtime;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot::{self, Receiver};
 
 use futures_util::future::Either;
 use mlua::{
     ExternalResult, FromLuaMulti, Function, IntoLuaMulti, Lua, RegistryKey, Result, Table,
-    TableExt, Value,
+    UserData, UserDataMethods, Value,
 };
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::FxBuildHasher;
 
 type FutureId = u32;
 
-// Channel to send future id to the socket
-#[derive(Clone, Debug)]
-struct FutureNotifier(mpsc::Sender<FutureId>);
+// Number of open connections to the notification server
+const PER_WORKER_POOL_SIZE: usize = 512;
 
-impl Deref for FutureNotifier {
-    type Target = mpsc::Sender<FutureId>;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-// Max size of the pool of channels
-const POOL_MAX_SIZE: usize = 512;
-
-// Pool of channels
-struct Pool(Vec<RegistryKey>);
-
-struct FutureChannelMap(FxHashMap<FutureId, RegistryKey>);
-
-// Future id generator
-static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+// Link between future id and the corresponding receiver (used to signal when the future is ready)
+static FUTURE_RX_MAP: OnceLock<DashMap<FutureId, Receiver<()>, FxBuildHasher>> = OnceLock::new();
 
 /// Returns the global tokio runtime.
 pub fn runtime() -> &'static runtime::Runtime {
@@ -54,83 +37,79 @@ pub fn runtime() -> &'static runtime::Runtime {
     })
 }
 
-// Starts a tokio runtime and spawns a background task to receive "ready "notifications
-// from futures and re-send them to the socket
-fn get_or_init_notifier(lua: &Lua) -> FutureNotifier {
-    if let Some(sender) = lua.app_data_ref::<FutureNotifier>() {
-        return sender.clone();
-    }
-
-    let (port_tx, port_rx) = oneshot::channel::<u16>();
-    // Spawn notification task (it sends data received from a future via channel to the socket)
-    let (tx, mut rx) = mpsc::channel::<FutureId>(1024);
-    runtime().spawn(async move {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("failed to bind to a port");
-        let port = listener
+// Find first free port
+fn get_notification_port() -> u16 {
+    static NOTIFICATION_PORT: OnceLock<u16> = OnceLock::new();
+    *NOTIFICATION_PORT.get_or_init(|| {
+        StdTcpListener::bind("127.0.0.1:0")
+            .expect("failed to bind to a local port")
             .local_addr()
             .expect("failed to get local address")
-            .port();
-        port_tx.send(port).expect("failed to send port information");
+            .port()
+    })
+}
 
-        while let Ok((mut stream, _)) = listener.accept().await {
-            while let Some(future_id) = rx.recv().await {
-                // Send the future id to the socket
-                // When haproxy receive it, it will find an associated coroutine and wake it up
-                if (stream.write_all(format!("{future_id}\n").as_bytes()).await).is_err() {
-                    // If the socket is closed, wait for a new connection
-                    break;
-                }
+fn get_rx_by_future_id(future_id: FutureId) -> Option<Receiver<()>> {
+    FUTURE_RX_MAP
+        .get_or_init(|| DashMap::with_capacity_and_hasher(256, FxBuildHasher))
+        .remove(&future_id)
+        .map(|(_, rx)| rx)
+}
+
+fn set_rx_by_future_id(future_id: FutureId, rx: Receiver<()>) {
+    FUTURE_RX_MAP
+        .get_or_init(|| DashMap::with_capacity_and_hasher(256, FxBuildHasher))
+        .insert(future_id, rx);
+}
+
+// Returns a next future id (and starts the notification task if it's not running yet)
+fn get_future_id() -> u32 {
+    static WATCHER: OnceLock<()> = OnceLock::new();
+    WATCHER.get_or_init(|| {
+        let port = get_notification_port();
+
+        // Spawn notification task (it responds to subscribe requests and signal when the future is ready)
+        runtime().spawn(async move {
+            let listener = TcpListener::bind(("127.0.0.1", port))
+                .await
+                .unwrap_or_else(|err| panic!("failed to bind to a port {port}: {err}"));
+
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::task::spawn(async move {
+                    let (reader, mut writer) = stream.split();
+                    let reader = BufReader::new(reader);
+                    let mut lines = reader.lines();
+                    // Read future id from the stream and wait for the future to be ready
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        let line = line.trim();
+                        if line == "PING" {
+                            if writer.write_all(b"PONG\n").await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        if let Ok(future_id) = line.parse::<u32>() {
+                            // Wait for the future to be ready before sending the signal
+                            let resp: &[u8] = match get_rx_by_future_id(future_id) {
+                                Some(rx) => {
+                                    _ = rx.await;
+                                    b"READY\n"
+                                }
+                                None => b"ERR\n",
+                            };
+                            if writer.write_all(resp).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                });
             }
-        }
+        });
     });
 
-    // Wait for the port to be bound
-    let port = port_rx
-        .blocking_recv()
-        .expect("failed to receive port information");
-
-    // Start haproxy task on this worker thread to receive notifications
-    // send over the socket (see above)
-    (|| -> Result<()> {
-        let future_wake_up = lua.create_function(|lua, future_id: Value| {
-            if let Ok(future_id) = lua.unpack::<FutureId>(future_id) {
-                let future2channel = lua.app_data_ref::<FutureChannelMap>().unwrap();
-                if let Some(channel_key) = future2channel.0.get(&future_id) {
-                    lua.registry_value::<Table>(channel_key)?
-                        .call_method::<_, ()>("push", true)?;
-                }
-            }
-            Ok(())
-        })?;
-
-        lua.load(
-            r#"
-            local port, future_wake_up = ...
-            core.register_task(function()
-                while true do
-                    local socket = core.tcp()
-                    local ok = socket:connect("127.0.0.1", port)
-                    if not ok then
-                        core.Alert("Failed to connect to the notification socket")
-                        return
-                    end
-                    while true do
-                        local future_id = socket:receive("*l")
-                        future_wake_up(future_id)
-                    end
-                end
-            end)
-        "#,
-        )
-        .call::<_, ()>((port, future_wake_up))
-    })()
-    .expect("failed to register a worker task");
-
-    let notifier = FutureNotifier(tx);
-    lua.set_app_data(notifier.clone());
-    notifier
+    // Future id generator
+    static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 /// Creates a new async function that can be used in HAProxy configuration.
@@ -143,64 +122,30 @@ where
     F: Fn(A) -> FR + 'static,
     FR: Future<Output = Result<R>> + Send + 'static,
 {
-    let _yield_fixup = YieldFixUp::new(lua)?;
+    let port = get_notification_port();
+    let _yield_fixup = YieldFixUp::new(lua, port)?;
     lua.create_async_function(move |lua, args| {
-        let notifier = get_or_init_notifier(lua);
-        let (future_id, channel) = (|| -> Result<_> {
-            // Try to get a channel from the pool or create a new one
-            let channel_key = {
-                let mut pool = match lua.app_data_mut::<Pool>() {
-                    Some(pool) => pool,
-                    None => {
-                        lua.set_app_data(Pool(Vec::with_capacity(64)));
-                        lua.app_data_mut().unwrap()
-                    }
-                };
-                match pool.0.pop() {
-                    Some(q) => q,
-                    None => {
-                        drop(pool);
-                        let globals = lua.globals();
-                        let core: Table = globals.raw_get("core")?;
-                        core.call_function::<_, Table>("queue", ())
-                            .and_then(|v| lua.create_registry_value(v))?
-                    }
-                }
-            };
+        // New future id must be generated on each invocation
+        let future_id = get_future_id();
 
-            let future_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let channel: Table = lua.registry_value(&channel_key)?;
-            let mut future2channel = match lua.app_data_mut::<FutureChannelMap>() {
-                Some(map) => map,
-                None => {
-                    let map =
-                        FutureChannelMap(HashMap::with_capacity_and_hasher(64, FxBuildHasher));
-                    lua.set_app_data(map);
-                    lua.app_data_mut().unwrap()
-                }
-            };
-            future2channel.0.insert(future_id, channel_key);
-
-            Ok((future_id, channel))
-        })()
-        .expect("failed to generate future id");
-
-        // Spawn the future
+        // Spawn the future in background
         let _guard = runtime().enter();
         let args = match A::from_lua_multi(args, lua) {
             Ok(args) => args,
             Err(err) => return Either::Left(future::ready(Err(err))),
         };
+        let (tx, rx) = oneshot::channel();
+        set_rx_by_future_id(future_id, rx);
         let fut = func(args);
         let result = tokio::task::spawn(async move {
             let result = fut.await;
-            let _ = notifier.send(future_id).await;
+            // Signal that the future is ready
+            let _ = tx.send(());
             result
         });
 
         Either::Right(HaproxyFuture {
             lua,
-            channel,
             id: future_id,
             fut: async move { result.await.into_lua_err()? },
         })
@@ -210,21 +155,68 @@ where
 struct YieldFixUp<'lua>(&'lua Lua, Function<'lua>);
 
 impl<'lua> YieldFixUp<'lua> {
-    fn new(lua: &'lua Lua) -> Result<Self> {
+    fn new(lua: &'lua Lua, port: u16) -> Result<Self> {
+        let connection_pool =
+            match lua.named_registry_value::<Value>("__HAPROXY_CONNECTION_POOL")? {
+                Value::Nil => {
+                    let connection_pool = ObjectPool::new(PER_WORKER_POOL_SIZE)?;
+                    let connection_pool = lua.create_userdata(connection_pool)?;
+                    lua.set_named_registry_value("__HAPROXY_CONNECTION_POOL", &connection_pool)?;
+                    Value::UserData(connection_pool)
+                }
+                connection_pool => connection_pool,
+            };
+
         let coroutine: Table = lua.globals().get("coroutine")?;
         let orig_yield: Function = coroutine.get("yield")?;
         let new_yield: Function = lua
             .load(
                 r#"
-                local active_channel = __HAPROXY_ACTIVE_CHANNEL
-                if active_channel ~= nil then
-                    active_channel:pop_wait()
-                else
-                    core.msleep(1)
+                local port, connection_pool = ...
+                local msleep = core.msleep
+                return function()
+                    -- It's important to cache the future id before the yield
+                    local future_id = __RUST_ACTIVE_FUTURE_ID
+                    local ok, err
+
+                    -- Get new or existing connection from the pool
+                    local sock = connection_pool:get()
+                    if not sock then
+                        sock = core.tcp()
+                        ok, err = sock:connect("127.0.0.1", port)
+                        if err ~= nil then
+                            msleep(1)
+                            return
+                        end
+                    end
+
+                    -- Subscribe to the future updates
+                    ok, err = sock:send(future_id .. "\n")
+                    if err ~= nil then
+                        sock:close()
+                        msleep(1)
+                        return
+                    end
+
+                    -- Wait for the future to be ready
+                    ok, err = sock:receive("*l")
+                    if err ~= nil then
+                        sock:close()
+                        msleep(1)
+                        return
+                    end
+                    if ok ~= "READY" then
+                        msleep(1)
+                    end
+
+                    ok = connection_pool:put(sock)
+                    if not ok then
+                        sock:close()
+                    end
                 end
             "#,
             )
-            .into_function()?;
+            .call((port, connection_pool))?;
         coroutine.set("yield", new_yield)?;
         Ok(YieldFixUp(lua, orig_yield))
     }
@@ -241,10 +233,31 @@ impl<'lua> Drop for YieldFixUp<'lua> {
     }
 }
 
+struct ObjectPool(Vec<RegistryKey>);
+
+impl ObjectPool {
+    fn new(capacity: usize) -> Result<Self> {
+        Ok(ObjectPool(Vec::with_capacity(capacity)))
+    }
+}
+
+impl UserData for ObjectPool {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("get", |_, this, ()| Ok(this.0.pop()));
+
+        methods.add_method_mut("put", |_, this, obj: RegistryKey| {
+            if this.0.len() == PER_WORKER_POOL_SIZE {
+                return Ok(false);
+            }
+            this.0.push(obj);
+            Ok(true)
+        });
+    }
+}
+
 pin_project_lite::pin_project! {
     struct HaproxyFuture<'lua, F> {
         lua: &'lua Lua,
-        channel: Table<'lua>,
         id: FutureId,
         #[pin]
         fut: F,
@@ -260,21 +273,10 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         match this.fut.poll(cx) {
-            Poll::Ready(res) => {
-                // Release channel to the pool
-                let mut pool = this.lua.app_data_mut::<Pool>().unwrap();
-                let mut future2channel = this.lua.app_data_mut::<FutureChannelMap>().unwrap();
-                if let Some(chan) = future2channel.0.remove(this.id) {
-                    if pool.0.len() < POOL_MAX_SIZE {
-                        pool.0.push(chan);
-                    }
-                }
-
-                Poll::Ready(res)
-            }
+            Poll::Ready(res) => Poll::Ready(res),
             Poll::Pending => {
-                // Set the active queue so the mlua async helper will be able to wait on it
-                let _ = (this.lua.globals()).raw_set("__HAPROXY_ACTIVE_CHANNEL", &*this.channel);
+                // Set the active future id so the mlua async helper will be able to wait on it
+                let _ = (this.lua.globals()).raw_set("__RUST_ACTIVE_FUTURE_ID", *this.id);
                 Poll::Pending
             }
         }
