@@ -1,7 +1,7 @@
 use std::future::{self, Future};
 use std::net::TcpListener as StdTcpListener;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::OnceLock;
 use std::task::{Context, Poll};
 
@@ -18,7 +18,10 @@ use mlua::{
 };
 use rustc_hash::FxBuildHasher;
 
-type FutureId = u32;
+// Using `u16` will give us max 65536 receivers to store.
+// If for any reason future was not picked up by the notification listener,
+// receiver will be overwritten on the counter reset (and memory released).
+type FutureId = u16;
 
 // Number of open connections to the notification server
 const PER_WORKER_POOL_SIZE: usize = 512;
@@ -50,10 +53,7 @@ fn get_notification_port() -> u16 {
 }
 
 fn get_rx_by_future_id(future_id: FutureId) -> Option<Receiver<()>> {
-    FUTURE_RX_MAP
-        .get_or_init(|| DashMap::with_capacity_and_hasher(256, FxBuildHasher))
-        .remove(&future_id)
-        .map(|(_, rx)| rx)
+    FUTURE_RX_MAP.get()?.remove(&future_id).map(|(_, rx)| rx)
 }
 
 fn set_rx_by_future_id(future_id: FutureId, rx: Receiver<()>) {
@@ -63,7 +63,7 @@ fn set_rx_by_future_id(future_id: FutureId, rx: Receiver<()>) {
 }
 
 // Returns a next future id (and starts the notification task if it's not running yet)
-fn get_future_id() -> u32 {
+fn get_future_id() -> FutureId {
     static WATCHER: OnceLock<()> = OnceLock::new();
     WATCHER.get_or_init(|| {
         let port = get_notification_port();
@@ -88,7 +88,7 @@ fn get_future_id() -> u32 {
                             }
                             continue;
                         }
-                        if let Ok(future_id) = line.parse::<u32>() {
+                        if let Ok(future_id) = line.parse::<FutureId>() {
                             // Wait for the future to be ready before sending the signal
                             let resp: &[u8] = match get_rx_by_future_id(future_id) {
                                 Some(rx) => {
@@ -108,7 +108,7 @@ fn get_future_id() -> u32 {
     });
 
     // Future id generator
-    static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+    static NEXT_ID: AtomicU16 = AtomicU16::new(1);
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
@@ -175,7 +175,7 @@ impl<'lua> YieldFixUp<'lua> {
                 local port, connection_pool = ...
                 local msleep = core.msleep
                 return function()
-                    -- It's important to cache the future id before the yield
+                    -- It's important to cache the future id before first yielding point
                     local future_id = __RUST_ACTIVE_FUTURE_ID
                     local ok, err
 
