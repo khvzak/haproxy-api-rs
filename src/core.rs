@@ -29,6 +29,17 @@ pub enum Action {
     HttpRes,
 }
 
+impl Action {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Action::TcpReq => "tcp-req",
+            Action::TcpRes => "tcp-res",
+            Action::HttpReq => "http-req",
+            Action::HttpRes => "http-res",
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum ServiceMode {
     Tcp,
@@ -146,15 +157,28 @@ impl<'lua> Core<'lua> {
         F: Fn(&'lua Lua, A) -> Result<()> + Send + 'static,
     {
         let func = self.lua.create_function(func)?;
-        let actions = actions
-            .iter()
-            .map(|act| match act {
-                Action::TcpReq => "tcp-req",
-                Action::TcpRes => "tcp-res",
-                Action::HttpReq => "http-req",
-                Action::HttpRes => "http-res",
-            })
-            .collect::<Vec<_>>();
+        let actions = actions.iter().map(|act| act.as_str()).collect::<Vec<_>>();
+        self.class
+            .call_function("register_action", (name, actions, func, nb_args))
+    }
+
+    /// Registers an asynchronous function executed as an action.
+    ///
+    /// See [`Core::register_action`] for more details.
+    pub fn register_async_action<F, A, FR>(
+        &self,
+        name: &str,
+        actions: &[Action],
+        nb_args: usize,
+        func: F,
+    ) -> Result<()>
+    where
+        F: Fn(A) -> FR + 'static,
+        A: FromLuaMulti<'lua> + 'static,
+        FR: Future<Output = Result<()>> + Send + 'static,
+    {
+        let func = crate::r#async::create_async_function(self.lua, func)?;
+        let actions = actions.iter().map(|act| act.as_str()).collect::<Vec<_>>();
         self.class
             .call_function("register_action", (name, actions, func, nb_args))
     }
