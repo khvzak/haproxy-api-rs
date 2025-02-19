@@ -27,6 +27,7 @@ pub enum Action {
     TcpRes,
     HttpReq,
     HttpRes,
+    HttpAfterRes,
 }
 
 impl Action {
@@ -36,6 +37,7 @@ impl Action {
             Action::TcpRes => "tcp-res",
             Action::HttpReq => "http-req",
             Action::HttpRes => "http-res",
+            Action::HttpAfterRes => "http-after-res",
         }
     }
 }
@@ -143,7 +145,7 @@ impl<'lua> Core<'lua> {
     }
 
     /// Registers a function executed as an action.
-    /// The expected actions are `tcp-req`, `tcp-res`, `http-req` or `http-res`.
+    /// The expected actions are `tcp-req`, `tcp-res`, `http-req`, `http-res` or `http-after-res`.
     /// All the registered actions can be used in HAProxy with the prefix `lua.`.
     pub fn register_action<A, F>(
         &self,
