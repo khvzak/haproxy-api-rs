@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+if [ "$#" -eq 0 ]; then
+    echo "usage: $0 <cargo command> [args...]" >&2
+    exit 2
+fi
+
+if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
+    pkg_config_paths="${PKG_CONFIG_PATH-}"
+    for formula in lua lua@5.4; do
+        prefix="$(brew --prefix "$formula" 2>/dev/null)"
+        if [ -d "$prefix/lib/pkgconfig" ]; then
+            if [ -n "$pkg_config_paths" ]; then
+                pkg_config_paths="$prefix/lib/pkgconfig:$pkg_config_paths"
+            else
+                pkg_config_paths="$prefix/lib/pkgconfig"
+            fi
+        fi
+    done
+    if [ -n "$pkg_config_paths" ]; then
+        export PKG_CONFIG_PATH="$pkg_config_paths"
+    fi
+fi
+
+lua_feature=
+for package in lua lua5.5 lua-5.5 lua55; do
+    if pkg-config --atleast-version=5.5 "$package" >/dev/null 2>&1 \
+        && ! pkg-config --atleast-version=5.6 "$package" >/dev/null 2>&1; then
+        lua_feature=lua55
+        break
+    fi
+done
+
+if [ -z "$lua_feature" ]; then
+    for package in lua lua5.4 lua-5.4 lua54; do
+        if pkg-config --atleast-version=5.4 "$package" >/dev/null 2>&1 \
+            && ! pkg-config --atleast-version=5.5 "$package" >/dev/null 2>&1; then
+            lua_feature=lua54
+            break
+        fi
+    done
+fi
+
+if [ -z "$lua_feature" ]; then
+    echo "error: Lua 5.5 or 5.4 development files were not found through pkg-config" >&2
+    echo "install a Lua development package and retry" >&2
+    exit 1
+fi
+
+for arg in "$@"; do
+    case "$arg" in
+        --all-features|--no-default-features|--features|-F)
+            echo "error: $0 selects the Lua feature; do not pass $arg" >&2
+            exit 2
+            ;;
+    esac
+done
+
+args=()
+inserted=false
+for arg in "$@"; do
+    if [ "$arg" = "--" ] && [ "$inserted" = false ]; then
+        args+=(--no-default-features --features "async,$lua_feature")
+        inserted=true
+    fi
+    args+=("$arg")
+done
+if [ "$inserted" = false ]; then
+    args+=(--no-default-features --features "async,$lua_feature")
+fi
+
+exec cargo "${args[@]}"

@@ -1,6 +1,6 @@
 [package]
 name = "haproxy-api"
-version = "0.9.0"
+version = "0.10.0"
 authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
 edition = "2021"
 repository = "https://github.com/khvzak/haproxy-api-rs"
@@ -13,25 +13,41 @@ HAProxy 2.8+ Lua API
 """
 
 [package.metadata.docs.rs]
-features = ["lua54"]
+features = ["lua55"]
 
 [workspace]
-members = [
+resolver = "2"
+exclude = [
     "examples/async_serve_file",
     "examples/brotli",
     "examples/simple",
+    "fuzz",
 ]
 
 [features]
-default = ["async", "lua54"]
-async = ["mlua/async", "dep:tokio", "dep:pin-project-lite", "dep:futures-util", "dep:rustc-hash", "dep:dashmap"]
-lua53 = ["mlua/lua53"]
-lua54 = ["mlua/lua54"]
+default = ["async", "lua55"]
+fuzzing = ["lua55"]
+lua = ["dep:mlua"]
+native = []
+runtime = ["dep:tokio"]
+async = ["lua", "runtime", "mlua/async", "dep:pin-project-lite", "dep:futures-util", "dep:rustc-hash", "dep:dashmap"]
+module = ["lua", "mlua/module"]
+lua53 = ["lua", "mlua/lua53"]
+lua54 = ["lua", "mlua/lua54"]
+lua55 = ["lua", "mlua/lua55"]
 
 [dependencies]
-mlua = { version = "0.11.1", features = ["module", "serde", "error-send"] }
-tokio = { version = "1.0", features = ["net", "io-util", "sync", "rt-multi-thread"], optional = true }
+mlua = { version = "0.12", optional = true, features = ["serde", "error-send", "macros"] }
+tokio = { version = "1", features = ["net", "io-util", "sync", "rt-multi-thread", "macros"], optional = true }
 pin-project-lite = { version = "0.2", optional = true }
 futures-util = { version = "0.3", optional = true }
-rustc-hash = { version = "2.0", optional = true }
-dashmap = { version = "6.0", optional = true }
+rustc-hash = { version = "2", optional = true }
+dashmap = { version = "6", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[[test]]
+name = "transaction_boundary"
+path = "tests/transaction_boundary.rs"
+required-features = ["lua"]

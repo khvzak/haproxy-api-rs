@@ -1,11 +1,8 @@
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use mlua::{
-    FromLua, IntoLua, Lua, ObjectLike, Result, String as LuaString, Table, TablePairs, Value,
-};
+use mlua::{table::TablePairs, FromLua, IntoLua, Lua, LuaString, ObjectLike, Result, Table, Value};
 
-/// The "Http" class contain all the HTTP manipulation functions.
 #[derive(Clone)]
 pub struct Http(Table);
 
@@ -130,6 +127,15 @@ impl FromLua for Http {
 
 impl Headers {
     #[inline]
+    fn values(&self, name: &str) -> Result<Option<Table>> {
+        if name.bytes().any(|byte| byte.is_ascii_uppercase()) {
+            self.0.get(name.to_ascii_lowercase())
+        } else {
+            self.0.get(name)
+        }
+    }
+
+    #[inline]
     pub fn pairs<V: FromLua>(&self) -> HeaderPairs<'_, V> {
         HeaderPairs {
             pairs: self.0.pairs(),
@@ -140,9 +146,8 @@ impl Headers {
     /// Returns all header fields by `name`.
     #[inline]
     pub fn get<V: FromLua>(&self, name: &str) -> Result<Vec<V>> {
-        let name = name.to_ascii_lowercase();
         let mut result = Vec::new();
-        if let Some(values) = self.0.get::<Option<Table>>(name)? {
+        if let Some(values) = self.values(name)? {
             let mut pairs = values.pairs::<i32, V>().collect::<Result<Vec<_>>>()?;
             pairs.sort_by_key(|x| x.0);
             result = pairs.into_iter().map(|(_, v)| v).collect();
@@ -153,8 +158,7 @@ impl Headers {
     /// Returns first header field by `name`.
     #[inline]
     pub fn get_first<V: FromLua>(&self, name: &str) -> Result<Option<V>> {
-        let name = name.to_ascii_lowercase();
-        if let Some(values) = self.0.get::<Option<Table>>(name)? {
+        if let Some(values) = self.values(name)? {
             return values.get(0); // Indexes starts from "0"
         }
         Ok(None)
@@ -201,5 +205,29 @@ impl<V: FromLua> Iterator for HeaderPairs<'_, V> {
             Some(Err(e)) => Some(Err(e)),
             None => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn header_lookup_accepts_lowercase_and_mixed_case_names() {
+        let lua = Lua::new();
+        let headers = lua.create_table().unwrap();
+        let values = lua.create_table().unwrap();
+        values.set(0, "value").unwrap();
+        headers.set("traceparent", values).unwrap();
+        let headers = Headers(headers);
+
+        assert_eq!(
+            headers.get_first::<String>("traceparent").unwrap(),
+            Some("value".to_owned())
+        );
+        assert_eq!(
+            headers.get_first::<String>("TraceParent").unwrap(),
+            Some("value".to_owned())
+        );
     }
 }

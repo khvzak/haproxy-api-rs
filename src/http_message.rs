@@ -1,11 +1,9 @@
 use std::ops::Deref;
 
-use mlua::{FromLua, Lua, ObjectLike, Result, String as LuaString, Table, Value};
+use mlua::{FromLua, Lua, LuaString, ObjectLike, Result, Table, Value};
 
 use crate::{Channel, Headers};
 
-/// This class contains all functions to manipulate an HTTP message.
-///
 /// For now, this class is only available from a filter context.
 #[derive(Clone)]
 pub struct HttpMessage(Table);
@@ -28,7 +26,7 @@ impl HttpMessage {
 
     /// Returns `length` bytes of incoming data from the HTTP message, starting at the `offset`.
     ///
-    /// The data are not removed from the buffer.
+    /// The data is not removed from the buffer.
     #[inline]
     pub fn body(&self, offset: Option<isize>, length: Option<isize>) -> Result<Option<LuaString>> {
         let offset = offset.unwrap_or(0);
@@ -73,7 +71,7 @@ impl HttpMessage {
     /// Returns the amount of data forwarded.
     ///
     /// Because it is called in the filter context, it never yield.
-    /// Only available incoming data may be forwarded, event if the requested length exceeds the available amount of incoming data.
+    /// Only available incoming data may be forwarded, even if the requested length exceeds the available amount.
     #[inline]
     pub fn forward(&self, length: usize) -> Result<usize> {
         self.0.call_method("forward", length)
@@ -90,7 +88,7 @@ impl HttpMessage {
     /// Returns the copied length on success or -1 if data cannot be copied.
     ///
     /// By default, if no `offset` is provided, the string is copied in front of incoming data.
-    /// A positive `offset` is relative to the beginning of incoming data of the channel buffer while negative offset is relative to their end.
+    /// A positive `offset` is relative to the beginning of incoming data in the message buffer; a negative offset is relative to its end.
     #[inline]
     pub fn insert(&self, data: impl AsRef<[u8]>, offset: Option<isize>) -> Result<isize> {
         let offset = offset.unwrap_or(0);

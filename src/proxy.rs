@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
-use mlua::{FromLua, Lua, ObjectLike, Result, String as LuaString, Table, Value};
+use mlua::{FromLua, Lua, LuaString, ObjectLike, Result, Table, Value};
 
+use crate::pairs::collect_pairs;
 use crate::{listener::Listener, Server, StickTable};
 
-/// The "Proxy" class provides a way for manipulating proxy
-/// and retrieving information like statistics.
 #[derive(Clone)]
-pub struct Proxy(Table);
+pub struct Proxy(Table, Lua);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProxyCapability {
@@ -29,13 +28,13 @@ pub enum ProxyMode {
 impl Proxy {
     /// Returns the name of the proxy.
     #[inline]
-    pub fn get_name(&self) -> Result<String> {
+    pub fn get_name(&self) -> Result<Option<String>> {
         self.0.call_method("get_name", ())
     }
 
     /// Returns the UUID of the proxy.
     #[inline]
-    pub fn get_uuid(&self) -> Result<String> {
+    pub fn get_uuid(&self) -> Result<Option<String>> {
         self.0.call_method("get_uuid", ())
     }
 
@@ -43,7 +42,7 @@ impl Proxy {
     /// The map is indexed by server name.
     #[inline]
     pub fn get_servers(&self) -> Result<HashMap<String, Server>> {
-        self.0.get("servers")
+        collect_pairs(&self.0.get("servers")?, &self.1)
     }
 
     /// Returns the stick table attached to the proxy.
@@ -56,7 +55,7 @@ impl Proxy {
     /// The table is indexed by listener name.
     #[inline]
     pub fn get_listeners(&self) -> Result<HashMap<String, Listener>> {
-        self.0.get("listeners")
+        collect_pairs(&self.0.get("listeners")?, &self.1)
     }
 
     /// Pauses the proxy.
@@ -87,47 +86,53 @@ impl Proxy {
         self.0.call_method("shut_bcksess", ())
     }
 
-    /// Returns a enum describing the capabilities of the proxy.
+    /// Returns an enum describing the capabilities of the proxy.
     #[inline]
-    pub fn get_cap(&self) -> Result<ProxyCapability> {
-        let cap: LuaString = self.0.call_method("get_cap", ())?;
-        match cap.to_str()?.deref() {
-            "frontend" => Ok(ProxyCapability::Frontend),
-            "backend" => Ok(ProxyCapability::Backend),
-            "proxy" => Ok(ProxyCapability::Proxy),
-            _ => Ok(ProxyCapability::Ruleset),
-        }
+    pub fn get_cap(&self) -> Result<Option<ProxyCapability>> {
+        let cap: Option<LuaString> = self.0.call_method("get_cap", ())?;
+        cap.map(|cap| {
+            Ok(match cap.to_str()?.deref() {
+                "frontend" => ProxyCapability::Frontend,
+                "backend" => ProxyCapability::Backend,
+                "proxy" => ProxyCapability::Proxy,
+                _ => ProxyCapability::Ruleset,
+            })
+        })
+        .transpose()
     }
 
-    /// Returns a enum describing the mode of the current proxy.
+    /// Returns an enum describing the mode of the current proxy.
     #[inline]
-    pub fn get_mode(&self) -> Result<ProxyMode> {
-        let mode: LuaString = self.0.call_method("get_mode", ())?;
-        match mode.to_str()?.deref() {
-            "tcp" => Ok(ProxyMode::Tcp),
-            "http" => Ok(ProxyMode::Http),
-            "health" => Ok(ProxyMode::Health),
-            _ => Ok(ProxyMode::Unknown),
-        }
+    pub fn get_mode(&self) -> Result<Option<ProxyMode>> {
+        let mode: Option<LuaString> = self.0.call_method("get_mode", ())?;
+        mode.map(|mode| {
+            Ok(match mode.to_str()?.deref() {
+                "tcp" => ProxyMode::Tcp,
+                "http" => ProxyMode::Http,
+                "health" => ProxyMode::Health,
+                _ => ProxyMode::Unknown,
+            })
+        })
+        .transpose()
     }
 
     /// Returns the number of current active servers for the current proxy
     /// that are eligible for LB.
     #[inline]
-    pub fn get_srv_act(&self) -> Result<usize> {
+    pub fn get_srv_act(&self) -> Result<Option<usize>> {
         self.0.call_method("get_srv_act", ())
     }
 
-    /// Returns the number backup servers for the current proxy that are eligible for LB.
+    /// Returns the number of backup servers for the current proxy that are eligible for LB.
     #[inline]
-    pub fn get_srv_bck(&self) -> Result<usize> {
+    pub fn get_srv_bck(&self) -> Result<Option<usize>> {
         self.0.call_method("get_srv_bck", ())
     }
 
     /// Returns a table containing the proxy statistics.
     /// The statistics returned are not the same if the proxy is frontend or a backend.
     #[inline]
-    pub fn get_stats(&self) -> Result<Table> {
+    pub fn get_stats(&self) -> Result<Option<Table>> {
         self.0.call_method("get_stats", ())
     }
 }
@@ -136,7 +141,7 @@ impl FromLua for Proxy {
     #[inline]
     fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
         let class = Table::from_lua(value, lua)?;
-        Ok(Proxy(class))
+        Ok(Proxy(class, lua.clone()))
     }
 }
 
@@ -146,5 +151,38 @@ impl Deref for Proxy {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deleted_proxy_getters_preserve_haproxy_nil() {
+        let lua = Lua::new();
+        let proxy = lua.create_table().unwrap();
+        let nil_function: mlua::Function =
+            lua.load("return function() return nil end").eval().unwrap();
+        for name in [
+            "get_name",
+            "get_uuid",
+            "get_cap",
+            "get_mode",
+            "get_srv_act",
+            "get_srv_bck",
+            "get_stats",
+        ] {
+            proxy.set(name, nil_function.clone()).unwrap();
+        }
+
+        let proxy = Proxy(proxy, lua);
+        assert!(proxy.get_name().unwrap().is_none());
+        assert!(proxy.get_uuid().unwrap().is_none());
+        assert!(proxy.get_cap().unwrap().is_none());
+        assert!(proxy.get_mode().unwrap().is_none());
+        assert!(proxy.get_srv_act().unwrap().is_none());
+        assert!(proxy.get_srv_bck().unwrap().is_none());
+        assert!(proxy.get_stats().unwrap().is_none());
     }
 }

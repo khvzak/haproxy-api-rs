@@ -4,14 +4,14 @@ use std::future::Future;
 use std::ops::Deref;
 
 use mlua::{
-    AnyUserData, AsChunk, Chunk, FromLuaMulti, IntoLua, Lua, ObjectLike, Result, Table, Value,
+    chunk::{AsChunk, Chunk},
+    AnyUserData, FromLuaMulti, IntoLua, Lua, ObjectLike, Result, Table, Value,
 };
 
 use crate::filter::UserFilterWrapper;
+use crate::pairs::collect_pairs;
 use crate::{EventSub, Proxy, UserFilter};
 
-/// The "Core" class contains all the HAProxy core functions.
-///
 /// It derefs to a Lua table, so you can use it as a Lua table directly.
 #[derive(Clone)]
 pub struct Core<'lua> {
@@ -75,19 +75,19 @@ impl<'lua> Core<'lua> {
     /// Returns a map of declared proxies (frontends and backends), indexed by proxy name.
     #[inline]
     pub fn proxies(&self) -> Result<HashMap<String, Proxy>> {
-        self.class.get("proxies")
+        collect_pairs(&self.class.get("proxies")?, self.lua)
     }
 
     /// Returns a map of declared proxies with backend capability, indexed by the backend name.
     #[inline]
     pub fn backends(&self) -> Result<HashMap<String, Proxy>> {
-        self.class.get("backends")
+        collect_pairs(&self.class.get("backends")?, self.lua)
     }
 
     /// Returns a map of declared proxies with frontend capability, indexed by the frontend name.
     #[inline]
     pub fn frontends(&self) -> Result<HashMap<String, Proxy>> {
-        self.class.get("frontends")
+        collect_pairs(&self.class.get("frontends")?, self.lua)
     }
 
     /// Returns the executing thread number starting at 0.
@@ -171,6 +171,7 @@ impl<'lua> Core<'lua> {
     /// Registers an asynchronous function executed as an action.
     ///
     /// See [`Core::register_action`] for more details.
+    #[cfg(feature = "async")]
     pub fn register_async_action<F, A, FR>(
         &self,
         name: &str,
@@ -329,7 +330,7 @@ impl<'lua> Core<'lua> {
 
     /// Parses ipv4 or ipv6 addresses and its facultative associated network.
     #[inline]
-    pub fn parse_addr(&self, addr: &str) -> Result<AnyUserData> {
+    pub fn parse_addr(&self, addr: &str) -> Result<Option<AnyUserData>> {
         self.class.call_function("parse_addr", addr)
     }
 
@@ -369,5 +370,75 @@ impl IntoLua for LogLevel {
             LogLevel::Debug => 7,
         })
         .into_lua(lua)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_core_and_proxy_lists_use_pairs_metamethods() {
+        let lua = Lua::new();
+        let core_class: Table = lua
+            .load(
+                r#"
+                local function list(key, value)
+                    local done = false
+                    return setmetatable({}, {
+                        __pairs = function()
+                            return function()
+                                if done then return nil end
+                                done = true
+                                return key, value
+                            end
+                        end,
+                    })
+                end
+                local proxy = {
+                    servers = list("server-a", {}),
+                    listeners = list("listener-a", {}),
+                }
+                return {
+                    proxies = list("proxy-a", proxy),
+                    backends = list("backend-a", proxy),
+                    frontends = list("frontend-a", proxy),
+                }
+                "#,
+            )
+            .eval()
+            .unwrap();
+        lua.globals().set("core", core_class).unwrap();
+
+        let core = Core::new(&lua).unwrap();
+        let proxies = core.proxies().unwrap();
+        let backends = core.backends().unwrap();
+        let frontends = core.frontends().unwrap();
+        let proxy = proxies.get("proxy-a").unwrap();
+
+        assert!(backends.contains_key("backend-a"));
+        assert!(frontends.contains_key("frontend-a"));
+        assert!(proxy.get_servers().unwrap().contains_key("server-a"));
+        assert!(proxy.get_listeners().unwrap().contains_key("listener-a"));
+    }
+
+    #[test]
+    fn parse_addr_invalid_input_is_none() {
+        let lua = Lua::new();
+        let core = lua.create_table().unwrap();
+        core.set(
+            "parse_addr",
+            lua.create_function(|_, _: String| Ok::<Option<AnyUserData>, mlua::Error>(None))
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert!(Core {
+            lua: &lua,
+            class: core
+        }
+        .parse_addr("not-an-address")
+        .unwrap()
+        .is_none());
     }
 }

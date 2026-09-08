@@ -3,11 +3,13 @@ name = "haproxy_async_module"
 version = "0.0.0"
 edition = "2021"
 
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-haproxy-api = { path = "../.." }
-mlua = { version = "0.11", features = ["macros"] }
-tokio = { version = "1.32", features = ["full"] }
-bstr = "1.0"
+haproxy-api = { path = "../..", features = ["module"] }
+mlua = { version = "0.12", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+bstr = "1"

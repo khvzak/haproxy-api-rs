@@ -1,15 +1,12 @@
 use std::ops::Deref;
 
-use mlua::{FromLua, IntoLua, Lua, ObjectLike, Result, String as LuaString, Table, Value};
+use mlua::{FromLua, IntoLua, Lua, LuaString, ObjectLike, Result, Table, Value};
 
-/// The "Channel" class contains all functions to manipulate channels.
-///
-/// Please refer to HAProxy documentation to get more information.
 #[derive(Clone)]
 pub struct Channel(Table);
 
 impl Channel {
-    /// Copies the string string at the end of incoming data of the channel buffer.
+    /// Appends `data` to incoming data in the channel buffer.
     ///
     /// Returns the copied length on success or -1 if data cannot be copied.
     #[inline]
@@ -19,7 +16,7 @@ impl Channel {
 
     /// Returns `length` bytes of incoming data from the channel buffer, starting at the `offset`.
     ///
-    /// The data are not removed from the buffer.
+    /// The data is not removed from the buffer.
     #[inline]
     pub fn data(&self, offset: Option<isize>, length: Option<isize>) -> Result<Option<LuaString>> {
         let offset = offset.unwrap_or(0);
@@ -43,12 +40,12 @@ impl Channel {
         self.0.call_method("input", ())
     }
 
-    /// Copies the `data` at the `offset` in incoming data of the channel buffer.
+    /// Inserts `data` into incoming channel data at the `offset`.
     ///
     /// Returns the copied length on success or -1 if data cannot be copied.
     ///
     /// By default, if no `offset` is provided, the string is copied in front of incoming data.
-    /// A positive `offset` is relative to the beginning of incoming data of the channel buffer while negative offset is relative to their end.
+    /// A positive `offset` is relative to the beginning of incoming data in the channel buffer; a negative offset is relative to its end.
     #[inline]
     pub fn insert(&self, data: impl AsRef<[u8]>, offset: Option<isize>) -> Result<isize> {
         let offset = offset.unwrap_or(0);
@@ -71,7 +68,7 @@ impl Channel {
     /// Parses `length` bytes of incoming data of the channel buffer, starting at `offset`,
     /// and returns the first line found, including the `\n`.
     ///
-    /// The data are not removed from the buffer. If no line is found, all data are returned.
+    /// The data is not removed from the buffer. If no line is found, all data is returned.
     #[inline]
     pub fn line(&self, offset: Option<isize>, length: Option<isize>) -> Result<Option<LuaString>> {
         let offset = offset.unwrap_or(0);

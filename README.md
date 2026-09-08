@@ -18,6 +18,28 @@ A multi-threaded tokio runtime is automatically started when the first async fun
 
 Please check the [async_serve_file](examples/async_serve_file) example to see how to serve files asynchronously.
 
+Native HAProxy modules must enable the `module` feature on `haproxy-api` and
+select the Lua version used by HAProxy, such as `lua54`.
+
+For ordinary Lua-enabled Cargo commands, `scripts/cargo-lua` selects Lua 5.5
+when pkg-config finds it and otherwise falls back to Lua 5.4. On macOS it also
+checks the standard Homebrew package locations.
+
+```sh
+./scripts/cargo-lua test
+```
+
+Use Cargo directly for native modules or another explicit feature set.
+
+## Migration to 0.10
+
+This release includes source-breaking changes:
+
+- Lua-enabled builds use `mlua` 0.12.
+- Results that may be `nil` now return `Result<Option<T>>`.
+- `StickTable::dump` accepts an optional Lua table filter.
+- `EventSub::unsub` returns `Result<()>`.
+
 [HAProxy]: http://www.haproxy.org/
 [Lua API]: http://www.arpalert.org/src/haproxy-lua-api/2.6/index.html
 [mlua]: https://github.com/khvzak/mlua

@@ -15,7 +15,7 @@ impl StickTable {
 
     /// Returns stick table entry for given `key`.
     #[inline]
-    pub fn lookup(&self, key: &str) -> Result<Table> {
+    pub fn lookup(&self, key: &str) -> Result<Option<Table>> {
         self.call_method("lookup", key)
     }
 
@@ -25,7 +25,7 @@ impl StickTable {
     /// Filter is a table with valid comparison operators as keys followed by data type name and value pairs.
     /// Check out the HAProxy docs for "show table" for more details.
     #[inline]
-    pub fn dump(&self, filter: Option<&str>) -> Result<Table> {
+    pub fn dump(&self, filter: Option<Table>) -> Result<Table> {
         self.call_method("dump", filter)
     }
 }
@@ -44,5 +44,47 @@ impl Deref for StickTable {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_missing_entry_is_none() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set(
+                "lookup",
+                lua.create_function(|_, _: (Table, String)| Ok::<Option<Table>, mlua::Error>(None))
+                    .unwrap(),
+            )
+            .unwrap();
+
+        assert!(StickTable(table).lookup("missing").unwrap().is_none());
+    }
+
+    #[test]
+    fn dump_passes_the_documented_table_filter() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set(
+                "dump",
+                lua.create_function(|_, (this, filter): (Table, Table)| {
+                    this.raw_set("filter_len", filter.raw_len())?;
+                    Ok(this)
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let filter = lua.create_table().unwrap();
+        filter.set(1, "gpc0").unwrap();
+
+        let result = StickTable(table).dump(Some(filter)).unwrap();
+
+        assert_eq!(result.get::<usize>("filter_len").unwrap(), 1);
     }
 }

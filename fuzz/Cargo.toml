@@ -1,0 +1,28 @@
+[package]
+name = "haproxy-api-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+haproxy-api = { path = "..", default-features = false, features = ["lua55", "fuzzing"] }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "native_descriptors"
+path = "fuzz_targets/native_descriptors.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lua_pairs"
+path = "fuzz_targets/lua_pairs.rs"
+test = false
+doc = false
+bench = false

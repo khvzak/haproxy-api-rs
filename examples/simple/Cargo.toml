@@ -3,9 +3,11 @@ name = "haproxy_simple_module"
 version = "0.0.0"
 edition = "2021"
 
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-haproxy-api = { path = "../.." }
-mlua = { version = "0.11", features = ["macros"] }
+haproxy-api = { path = "../..", features = ["module"] }
+mlua = { version = "0.12", features = ["macros"] }
